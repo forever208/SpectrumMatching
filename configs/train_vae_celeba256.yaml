@@ -9,7 +9,7 @@ training_args:
   disc_learning_rate: 0.00005                   # Discriminator Learning Rate
   disc_lr_scheduler: constant_with_warmup       # Discriminator LR Scheduler "constant", "constant_with_warmup", "linear", "cosine"
   disc_lr_warmup_steps: 500                     # Discriminator LR Warmup Steps
-  disc_start: 15000                             # Discriminator Delayed Starting Iteration (under batch 48)
+  disc_start: 15000                             # Discriminator Delayed Starting Iteration (batch_sz 48)
   disc_weight: 0.5                              # Discriminator Loss Weight
 
   ### LPIPS Config ###
@@ -19,10 +19,10 @@ training_args:
   lpips_weight: 0.5                             # LPIPS loss weight
 
   ### Training Config ###
-  learning_rate: 0.00005                        # VAE Training Learning Rate
+  learning_rate: 0.00005                        # VAE Training Learning Rate  (batch_sz 48)
   lr_scheduler: constant_with_warmup            # LR Scheduler
   lr_warmup_steps: 1500                         # LR Warmup Steps
-  total_training_iterations: 100000             # Total Training Iterations
+  total_training_iterations: 100000             # Total Training Iterations  (batch_sz 48)
   checkpoint_iterations: 5000                   # Checkpoint Iteration Frequency
   per_gpu_batch_size: 12                        # Batch per GPU (multipled by n_gpus in accelerate)
   gradient_accumulations_steps: 1               # Split per GPU batch into accumulation steps
