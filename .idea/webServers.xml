@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="7131a627-9a8e-4bf8-9432-610de089b8c9" name="MPI">
+        <fileTransfer rootFolder="/data/clusterfs/mld/users/lanliu/mang" accessType="SFTP" host="ssh.mpi.nl" port="22" sshConfigId="e870beaf-8785-4b2a-88c8-011a6a326379" sshConfig="MPI">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+      <webServer id="8aee0b79-de12-4d03-b5a8-0afe89d8cfbb" name="SURF">
+        <fileTransfer rootFolder="/home/mning" accessType="SFTP" host="snellius.surf.nl" port="22" sshConfigId="eb949c38-7cf1-47a1-a221-b9b47b8bbf63" sshConfig="SURF">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>

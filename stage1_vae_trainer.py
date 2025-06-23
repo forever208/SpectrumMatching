@@ -11,10 +11,13 @@ from tqdm import tqdm
 from diffusers.optimization import get_scheduler
 import lpips
 
-from utils import load_val_images, save_orig_and_generated_images, count_num_params
+from utils import load_val_images, save_orig_and_generated_images, count_num_params, convert_to_PIL_imgs
 from modules import VAE, LDMConfig, PatchGAN, init_weights
 from modules import LPIPS as mylpips
 from dataset import get_dataset
+from eval_utils.utils import calculate_fid_given_paths, calculate_psnr_between_folders
+from torchmetrics import StructuralSimilarityIndexMeasure
+import shutil
 
 
 ### Load Arguments ###
@@ -22,6 +25,7 @@ def experiment_config_parser():
     parser = argparse.ArgumentParser(description="Experiment Configuration")
     parser.add_argument("--experiment_name", required=True, type=str, metavar="experiment_name")
     parser.add_argument("--working_directory", help="where checkpoints and logs are stored", required=True, type=str, metavar="working_directory")
+    parser.add_argument("--eval_dir", help="where the eval images should be saved into", required=True, type=str, metavar="eval_dir")
     parser.add_argument("--log_wandb", action=argparse.BooleanOptionalAction, help="log to WandB?")
     parser.add_argument("--wandb_run_name", required=True, type=str, metavar="wandb_run_name")
     parser.add_argument("--resume_from_checkpoint",  help="name of ckpt folder to resume training from", default=None, type=str, metavar="resume_from_checkpoint")
@@ -63,7 +67,7 @@ def main():
     latent_res = (config.img_size // (len(config.vae_channels_per_block)-1)**2)
     accelerator.print(f"LATENT SPACE DIMENSIONS: {config.latent_channels, latent_res, latent_res}")
 
-    ### Load LPIPS ###
+    ### Load LPIPS and SSIM ###
     use_lpips = False
     if train_cfg["use_lpips"]:
         use_lpips = True
@@ -73,6 +77,7 @@ def main():
             lpips_loss_fn = mylpips()
             lpips_loss_fn.load_checkpoint(train_cfg["lpips_checkpoint"])
         lpips_loss_fn = lpips_loss_fn.to(accelerator.device)
+        ssim_fn = StructuralSimilarityIndexMeasure(data_range=(-1.0, 1.0)).to(accelerator.device)
 
     ### Load Discriminator ###
     use_disc = False
@@ -87,7 +92,7 @@ def main():
         ).apply(init_weights)
         discriminator = discriminator.to(accelerator.device)
 
-        ### If training on multiple GPUs, we need to convert BatchNorm to SyncBatchNorm ###
+        # If training on multiple GPUs, we need to convert BatchNorm to SyncBatchNorm
         if accelerator.num_processes > 1:
             discriminator = nn.SyncBatchNorm.convert_sync_batchnorm(discriminator)
 
@@ -131,10 +136,18 @@ def main():
         persistent_workers=True,
     )
 
+    eval_dataloader = DataLoader(
+        dataset,
+        batch_size=mini_batchsize,
+        pin_memory=False,
+        num_workers=4,
+        shuffle=False,
+    )
+
     effective_epochs = (train_cfg["per_gpu_batch_size"] * accelerator.num_processes * train_cfg["total_training_iterations"]) / len(dataset)
     accelerator.print("Effective Epochs:", round(effective_epochs, 2))
 
-    ### Get Learning Rate Scheduler ###
+    ### Learning Rate Scheduler ###
     lr_scheduler = get_scheduler(
             train_cfg["lr_scheduler"],
             optimizer=optimizer,
@@ -150,11 +163,16 @@ def main():
             )
 
     ### Prepare Everything ###
-    model, optimizer, lr_scheduler, dataloader = accelerator.prepare(model, optimizer, lr_scheduler, dataloader)
+    model, optimizer, lr_scheduler, dataloader, eval_dataloader, = accelerator.prepare(
+        model, optimizer, lr_scheduler, dataloader, eval_dataloader
+    )
     if use_disc:
-        discriminator, disc_optimizer, disc_lr_scheduler = accelerator.prepare(discriminator, disc_optimizer, disc_lr_scheduler)
+        discriminator, disc_optimizer, disc_lr_scheduler = accelerator.prepare(
+            discriminator, disc_optimizer, disc_lr_scheduler
+        )
     if use_lpips:
         lpips_loss_fn = accelerator.prepare(lpips_loss_fn)
+        ssim_fn = accelerator.prepare(ssim_fn)
 
     ### Load Validation Images (If we have a folder of them) ###
     val_images = None
@@ -166,12 +184,10 @@ def main():
             dtype=accelerator.mixed_precision
         )
 
-    ### Initialize Variables to Accumulate ###
-    model_log = {"loss": 0, "percept_loss": 0, "recon_loss": 0, "lpips_loss": 0,
-                 "kl_loss": 0, "disc_loss": 0, "adp_weight": 0}
+    ### Initialize log Variables ###
+    model_log = {"loss": 0, "percept_loss": 0, "recon_loss": 0, "lpips_loss": 0, "kl_loss": 0, "disc_loss": 0, "adp_weight": 0}
     disc_log = {"disc_loss": 0, "logits_real": 0, "logits_fake": 0}
 
-    ### Quick Helper to Rest Logs ###
     def reset_log(log):
         return {key: 0 for (key, _) in log.items()}
 
@@ -184,10 +200,14 @@ def main():
     else:
         global_step = 0
 
-    progress_bar = tqdm(range(train_cfg["total_training_iterations"]), initial=global_step, disable=not accelerator.is_local_main_process)
-
     ### Training Loop ###
+    progress_bar = tqdm(range(train_cfg["total_training_iterations"]), initial=global_step, disable=not accelerator.is_local_main_process)
     train = True
+    eval_org_imgs_path = os.path.join(args.eval_dir, "eval_org_imgs")
+    eval_recon_imgs_path = os.path.join(args.eval_dir, "eval_recon_imgs")
+    eval_lpips = []
+    eval_ssim = []
+
     while train:
         model.train()
         if use_disc:
@@ -208,10 +228,10 @@ def main():
                 else:
                     generator_step = False
 
-            ### Pass Through Model ###
             model_outputs = model(pixel_values)
             reconstructions = model_outputs["reconstruction"]
 
+            ### train the VAE ###
             if generator_step:
                 optimizer.zero_grad()
 
@@ -233,13 +253,13 @@ def main():
                     perceptual_loss = reconstruction_loss + train_cfg["lpips_weight"] * lpips_loss
                     loss = perceptual_loss
 
-                    ### Compute Discriminator Loss (incase we are training the discriminator) ###
+                    ### Discriminator Loss (incase we are training the discriminator) ###
                     gen_loss = torch.zeros(size=(), device=pixel_values.device)
                     adaptive_weight = torch.zeros(size=(), device=pixel_values.device)
                     if train_disc:
                         gen_loss = -1 * discriminator(reconstructions).mean()  # generator loss
 
-                        ### use gradient of the last layer to construct the adaptive weight
+                        # use gradient of the last layer to construct the adaptive weight
                         last_layer = accelerator.unwrap_model(model).decoder.conv_out.weight
                         norm_grad_wrt_perceptual_loss = torch.autograd.grad(
                             outputs=loss,
@@ -256,11 +276,10 @@ def main():
                         adaptive_weight = adaptive_weight.clamp(max=1e4)
                         loss = loss + adaptive_weight * gen_loss * train_cfg["disc_weight"]
 
-                    ### Compute KL Loss ###
+                    ### KL Loss ###
                     kl_loss = model_outputs["kl_loss"].mean()
                     loss = loss + kl_loss * train_cfg["kl_weight"]
 
-                    ### Update Model ###
                     accelerator.backward(loss)
                     if accelerator.sync_gradients:
                         accelerator.clip_grad_norm_(model.parameters(), 1.0)
@@ -280,14 +299,13 @@ def main():
                     for key, value in log.items():
                         model_log[key] += value.mean() / train_cfg["gradient_accumulations_steps"]
 
+            ### train the discriminator ###
             else:
                 disc_optimizer.zero_grad()
                 with accelerator.accumulate(discriminator):
                     real = discriminator(pixel_values)
                     fake = discriminator(reconstructions)
                     loss = (F.relu(1 + fake) + F.relu(1 - real)).mean()  # discriminator Hinge loss
-
-                    ### Update Discriminator Model ###
                     accelerator.backward(loss)
                     if accelerator.sync_gradients:
                         accelerator.clip_grad_norm_(discriminator.parameters(), 1.0)
@@ -298,13 +316,11 @@ def main():
                     for key, value in log.items():
                         disc_log[key] += value.mean() / train_cfg["gradient_accumulations_steps"]
 
+            ### output log info ###
             if accelerator.sync_gradients:
                 if model_toggle or not train_disc:  # If we updated the VAE
-
-                    ## Gather Across GPUs ###
                     model_log = {key: accelerator.gather_for_metrics(value).mean().item() for key, value in model_log.items()}
                     model_log["lr"] = lr_scheduler.get_last_lr()[0]
-
                     logging_string = "GEN: "
                     for k, v in model_log.items():
                         v = v.item() if torch.is_tensor(v) else v
@@ -313,20 +329,14 @@ def main():
                         else:
                             v = round(v, 2)
                         logging_string += f"|{k}: {v}"
-
                     accelerator.print(logging_string)  # Print to Console
                     accelerator.log(model_log, step=global_step)  # Push to WandB
-
-                    ### Reset Log for Next Accumulation ###
-                    model_log = reset_log(model_log)
+                    model_log = reset_log(model_log)  # Reset Log for Next Accumulation
                     model_log.pop("lr")
 
-                ### If we updated the Discriminator ###
-                else:
-                    ## Gather Across GPUs ###
+                else:  # If we updated the Discriminator
                     disc_log = {key: accelerator.gather_for_metrics(value).mean().item() for key, value in disc_log.items()}
                     disc_log["disc_lr"] = disc_lr_scheduler.get_last_lr()[0]
-
                     logging_string = "DIS: "
                     for k, v in disc_log.items():
                         v = v.item() if torch.is_tensor(v) else v
@@ -335,15 +345,9 @@ def main():
                         else:
                             v = round(v, 2)
                         logging_string += f"|{k}: {v}"
-
-                    ### Print to Console ###
-                    accelerator.print(logging_string)
-
-                    ### Push to WandB ###
-                    accelerator.log(disc_log, step=global_step)
-
-                    ### Reset Log for Next Accumulation ###
-                    disc_log = reset_log(disc_log)
+                    accelerator.print(logging_string)  # Print to Console
+                    accelerator.log(disc_log, step=global_step)  # Push to WandB
+                    disc_log = reset_log(disc_log)  # Reset Log for Next Accumulation
                     disc_log.pop("disc_lr")
 
                 global_step += 1
@@ -352,8 +356,45 @@ def main():
             ### Validation step ###
             if global_step % train_cfg["val_generation_freq"] == 0:
                 if accelerator.is_main_process:
+                    os.makedirs(eval_org_imgs_path, exist_ok=True)
+                    os.makedirs(eval_recon_imgs_path, exist_ok=True)
+
+                mini_batch_size = train_cfg["per_gpu_batch_size"]
+                world_size = accelerator.state.num_processes
+                local_rank = accelerator.state.local_process_index
+
+                ### load eval images and save images for evaluation ###
+                model.eval()
+                stop = False
+                for j, mini_batch in enumerate(eval_dataloader):
+                    org_imgs = mini_batch["images"].to(accelerator.device)
+                    with torch.no_grad():
+                        recon_imgs = model(org_imgs)
+                        recon_imgs = recon_imgs["reconstruction"]
+                        eval_lpips.append(lpips_loss_fn(recon_imgs, org_imgs).mean())
+                        eval_ssim.append(ssim_fn(recon_imgs, org_imgs))
+
+                    org_imgs = convert_to_PIL_imgs(org_imgs)  # a list PIL images
+                    recon_imgs = convert_to_PIL_imgs(recon_imgs)  # a list PIL images
+
+                    for b_id in range(mini_batch_size):  # distributed image save
+                        img_id = j * mini_batch_size * world_size + local_rank * mini_batch_size + b_id
+                        if img_id >= train_cfg["num_eval_images"]:
+                            stop =  True
+                            break
+                        org_imgs[b_id].save(os.path.join(eval_org_imgs_path, f"{img_id}.jpg"))
+                        recon_imgs[b_id].save(os.path.join(eval_recon_imgs_path, f"{img_id}.jpg"))
+                    if stop:
+                        break
+
+                accelerator.wait_for_everyone()
+                if accelerator.is_main_process:
+                    accelerator.print(f'{len(os.listdir(eval_org_imgs_path))} images in {eval_org_imgs_path}')
+                    accelerator.print(f'{len(os.listdir(eval_recon_imgs_path))} images in {eval_recon_imgs_path}')
+                    assert len(os.listdir(eval_recon_imgs_path)) == train_cfg["num_eval_images"]
+
+                    ### save images for visualization ###
                     if val_images is None:
-                        ### If we dont have a val images folder, just use the last batch as our validation images ###
                         batch_size = len(pixel_values)
                         num_random_gens = train_cfg["num_val_random_samples"]
                         if batch_size < num_random_gens:
@@ -374,7 +415,39 @@ def main():
                         accelerator=accelerator
                     )
 
+                    ### evaluate rFID ###
+                    accelerator.print(f"Evaluating rFID...")
+                    fid = calculate_fid_given_paths(
+                        [eval_org_imgs_path, eval_recon_imgs_path], batch_size=50, dims=2048, device=pixel_values.device
+                    )
+
+                    accelerator.print(f"Evaluating PSNR...")
+                    psnr_values = calculate_psnr_between_folders(eval_org_imgs_path, eval_recon_imgs_path)
+                    avg_psnr = sum(psnr_values) / len(psnr_values)
+
+                    accelerator.print(f"Evaluating LPIPS...")
+                    eval_lpips = torch.tensor(eval_lpips)
+                    eval_lpips = eval_lpips.mean().item()
+
+                    accelerator.print(f"Evaluating SSIM...")
+                    eval_ssim = torch.tensor(eval_ssim)
+                    eval_ssim = eval_ssim.mean().item()
+
+                    accelerator.print(f"rFID at step {global_step} is {fid}")
+                    accelerator.print(f"PSNR at step {global_step} is {avg_psnr}")
+                    accelerator.print(f"LPIPS at step {global_step} is {eval_lpips}")
+                    accelerator.print(f"SSIM at step {global_step} is {eval_ssim}")
+
+                    with open(os.path.join(args.working_directory, f'eval.log'), 'a') as f:
+                        print(f'step={global_step} rfid={fid} PSNR={avg_psnr} LPIPS={eval_lpips} SSIM={eval_ssim}', file=f)
+
+                    # reset
+                    shutil.rmtree(eval_org_imgs_path)  # remove the image folder
+                    shutil.rmtree(eval_recon_imgs_path)  # remove the image folder
+                    eval_lpips = []
                     model.train()
+
+                torch.cuda.empty_cache()
                 accelerator.wait_for_everyone()
 
             ### save ckpt ###

@@ -87,6 +87,18 @@ def save_orig_and_generated_images(original_images, generated_image_tensors, pat
     final_image.save(path_to_save)
 
 
+def convert_to_PIL_imgs(image_tensors):
+    # Clamp output between [-1, 1] and rescale to [0, 255]
+    image_tensors = image_tensors.float()
+    image_tensors = torch.clamp(image_tensors, -1., 1.)
+    image_tensors = (image_tensors + 1) / 2
+    image_tensors = image_tensors.cpu().permute(0, 2, 3, 1).numpy()
+    image_tensors = (255 * image_tensors).astype(np.uint8)
+
+    # Convert each tensor to a PIL image
+    return [Image.fromarray(img).convert("RGB") for img in image_tensors]
+
+
 def save_generated_images(generated_image_tensors, path_to_save_folder=None, step=None, path_to_save=None):
     """
     Quick helper function where:
