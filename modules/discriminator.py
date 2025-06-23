@@ -8,16 +8,9 @@ class PatchGAN(nn.Module):
     https://arxiv.org/pdf/1611.07004 
     """
 
-    def __init__(self, 
-                 input_channels=3, 
-                 start_dim=64, 
-                 depth=3,
-                 kernel_size=4, 
-                 padding=1,
-                 leaky_relu_slope=0.2):
+    def __init__(self, input_channels=3, start_dim=64, depth=3, kernel_size=4, padding=1, leaky_relu_slope=0.2):
         
         super(PatchGAN, self).__init__()
-
         current_filters = start_dim
         layers = nn.ModuleList([])
 
@@ -27,7 +20,6 @@ class PatchGAN(nn.Module):
 
         ### Loop For All the Next Layes ###
         for i in range(depth):
-
             ### Apply a stride of 2 on all convoutions except the last ###
             stride = 2 if i != depth-1 else 1 
             out_channels = current_filters * 2
@@ -44,7 +36,9 @@ class PatchGAN(nn.Module):
         self.model = nn.Sequential(*layers)
 
     def forward(self, input):
-        return self.model(input)
+        ### 256x256 --> 128x128 --> 64x64 --> 32x32 --> 31x31 --> 30x30 ###
+        return self.model(input)  # output logits of patchs, (batch, 1, 30, 30)
+
 
 def init_weights(module):
     if isinstance(module, nn.Conv2d):

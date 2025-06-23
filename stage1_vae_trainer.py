@@ -21,53 +21,14 @@ from dataset import get_dataset
 def experiment_config_parser():
     parser = argparse.ArgumentParser(description="Experiment Configuration")
     parser.add_argument("--experiment_name", required=True, type=str, metavar="experiment_name")
-    parser.add_argument("--wandb_run_name", required=True,  type=str, metavar="wandb_run_name")
-
-    parser.add_argument("--working_directory",
-                        help="Working Directory where checkpoints and logs are stored, inside a \
-                        folder labeled by the experiment name", 
-                        required=True,
-                        type=str,
-                        metavar="working_directory")
-
-    parser.add_argument("--log_wandb",
-                        action=argparse.BooleanOptionalAction,
-                        help="Do you want to log to WandB?")
-
-    parser.add_argument("--resume_from_checkpoint", 
-                        help="Pass name of checkpoint folder to resume training from",
-                        default=None,
-                        type=str, 
-                        metavar="resume_from_checkpoint")
-    
-    parser.add_argument("--training_config",
-                        help="Path to config file for all training information",
-                        required=True,
-                        type=str, 
-                        metavar="training_config")
-    
-    parser.add_argument("--model_config",
-                        help="Path to config file for all model information",
-                        required=True, 
-                        type=str, 
-                        metavar="model_config")
-    
-    parser.add_argument("--dataset",
-                        help="What dataset do you want to train on?",
-                        choices=("conceptual_captions", "imagenet", "coco", "celeba", "celebahq", "birds", "ffhd"),
-                        required=True,
-                        type=str)
-
-    parser.add_argument("--path_to_dataset",
-                        help="Root directory of dataset",
-                        required=True,
-                        type=str)
-    
-    parser.add_argument("--path_to_save_gens",
-                        help="Folder you want to store the testing generations througout training",
-                        required=True, 
-                        type=str)
-
+    parser.add_argument("--working_directory", help="where checkpoints and logs are stored", required=True, type=str, metavar="working_directory")
+    parser.add_argument("--log_wandb", action=argparse.BooleanOptionalAction, help="log to WandB?")
+    parser.add_argument("--wandb_run_name", required=True, type=str, metavar="wandb_run_name")
+    parser.add_argument("--resume_from_checkpoint",  help="name of ckpt folder to resume training from", default=None, type=str, metavar="resume_from_checkpoint")
+    parser.add_argument("--training_config", help="Path to config file", required=True, type=str, metavar="training_config")
+    parser.add_argument("--model_config", help="Path to model config file", required=True, type=str, metavar="model_config")
+    parser.add_argument("--dataset", help="dataset to train on", choices=("conceptual_captions", "imagenet", "coco", "celeba", "celebahq", "birds", "ffhq"), required=True, type=str)
+    parser.add_argument("--path_to_dataset", help="Root directory of dataset", required=True, type=str)
     args = parser.parse_args()
 
     return args
@@ -94,7 +55,7 @@ def main():
         log_with="wandb" if args.log_wandb else None
     )
 
-    if args.log_wandb:
+    if args.log_wandb:  # init wandb with accelerator
         accelerator.init_trackers(args.experiment_name, init_kwargs={"wandb": {"name": args.wandb_run_name}})
 
     ### Load Model ###
@@ -111,7 +72,6 @@ def main():
         else:
             lpips_loss_fn = mylpips()
             lpips_loss_fn.load_checkpoint(train_cfg["lpips_checkpoint"])
-
         lpips_loss_fn = lpips_loss_fn.to(accelerator.device)
 
     ### Load Discriminator ###
@@ -125,7 +85,6 @@ def main():
             kernel_size=train_cfg["disc_kernel_size"],
             leaky_relu_slope=train_cfg["disc_leaky_relu"]
         ).apply(init_weights)
-
         discriminator = discriminator.to(accelerator.device)
 
         ### If training on multiple GPUs, we need to convert BatchNorm to SyncBatchNorm ###
@@ -144,7 +103,6 @@ def main():
         betas=(train_cfg["optimizer_beta1"], train_cfg["optimizer_beta2"]),
         weight_decay=train_cfg["optimizer_weight_decay"]
     )
-
     if use_disc:
         disc_optimizer = torch.optim.AdamW(
             discriminator.parameters(),
@@ -183,7 +141,6 @@ def main():
             num_training_steps=train_cfg["total_training_iterations"],
             num_warmup_steps=train_cfg["lr_warmup_steps"]
         )
-
     if use_disc:
         disc_lr_scheduler = get_scheduler(
                 train_cfg["disc_lr_scheduler"],
@@ -194,10 +151,8 @@ def main():
 
     ### Prepare Everything ###
     model, optimizer, lr_scheduler, dataloader = accelerator.prepare(model, optimizer, lr_scheduler, dataloader)
-
     if use_disc:
         discriminator, disc_optimizer, disc_lr_scheduler = accelerator.prepare(discriminator, disc_optimizer, disc_lr_scheduler)
-
     if use_lpips:
         lpips_loss_fn = accelerator.prepare(lpips_loss_fn)
 
@@ -212,17 +167,9 @@ def main():
         )
 
     ### Initialize Variables to Accumulate ###
-    model_log = {"loss": 0,
-                "percept_loss": 0,
-                "recon_loss": 0,
-                "lpips_loss": 0,
-                "kl_loss": 0,
-                "disc_loss": 0,
-                "adp_weight": 0}
-
-    disc_log = {"disc_loss": 0,
-                "logits_real": 0,
-                "logits_fake": 0}
+    model_log = {"loss": 0, "percept_loss": 0, "recon_loss": 0, "lpips_loss": 0,
+                 "kl_loss": 0, "disc_loss": 0, "adp_weight": 0}
+    disc_log = {"disc_loss": 0, "logits_real": 0, "logits_fake": 0}
 
     ### Quick Helper to Rest Logs ###
     def reset_log(log):
@@ -290,7 +237,9 @@ def main():
                     gen_loss = torch.zeros(size=(), device=pixel_values.device)
                     adaptive_weight = torch.zeros(size=(), device=pixel_values.device)
                     if train_disc:
-                        gen_loss = -1 * discriminator(reconstructions).mean()
+                        gen_loss = -1 * discriminator(reconstructions).mean()  # generator loss
+
+                        ### use gradient of the last layer to construct the adaptive weight
                         last_layer = accelerator.unwrap_model(model).decoder.conv_out.weight
                         norm_grad_wrt_perceptual_loss = torch.autograd.grad(
                             outputs=loss,
@@ -305,7 +254,6 @@ def main():
 
                         adaptive_weight = norm_grad_wrt_perceptual_loss / norm_grad_wrt_gen_loss.clamp(min=1e-8)
                         adaptive_weight = adaptive_weight.clamp(max=1e4)
-
                         loss = loss + adaptive_weight * gen_loss * train_cfg["disc_weight"]
 
                     ### Compute KL Loss ###
@@ -314,10 +262,8 @@ def main():
 
                     ### Update Model ###
                     accelerator.backward(loss)
-
                     if accelerator.sync_gradients:
                         accelerator.clip_grad_norm_(model.parameters(), 1.0)
-
                     optimizer.step()
                     lr_scheduler.step()
 
@@ -331,8 +277,6 @@ def main():
                         "disc_loss": gen_loss,
                         "adp_weight": adaptive_weight
                     }
-
-                    ### Accumulate Log ###
                     for key, value in log.items():
                         model_log[key] += value.mean() / train_cfg["gradient_accumulations_steps"]
 
@@ -341,24 +285,21 @@ def main():
                 with accelerator.accumulate(discriminator):
                     real = discriminator(pixel_values)
                     fake = discriminator(reconstructions)
-                    loss = (F.relu(1 + fake) + F.relu(1 - real)).mean()  # Hinge loss
+                    loss = (F.relu(1 + fake) + F.relu(1 - real)).mean()  # discriminator Hinge loss
 
                     ### Update Discriminator Model ###
                     accelerator.backward(loss)
                     if accelerator.sync_gradients:
                         accelerator.clip_grad_norm_(discriminator.parameters(), 1.0)
-
                     disc_optimizer.step()
                     disc_lr_scheduler.step()
-                    log = {"disc_loss": loss, "logits_real": real.mean(), "logits_fake": fake.mean()}
 
-                    ### Accumulate Log ###
+                    log = {"disc_loss": loss, "logits_real": real.mean(), "logits_fake": fake.mean()}
                     for key, value in log.items():
                         disc_log[key] += value.mean() / train_cfg["gradient_accumulations_steps"]
 
             if accelerator.sync_gradients:
-                ### If we updated the VAE ###
-                if model_toggle or not train_disc:
+                if model_toggle or not train_disc:  # If we updated the VAE
 
                     ## Gather Across GPUs ###
                     model_log = {key: accelerator.gather_for_metrics(value).mean().item() for key, value in model_log.items()}
@@ -373,11 +314,8 @@ def main():
                             v = round(v, 2)
                         logging_string += f"|{k}: {v}"
 
-                    ### Print to Console ###
-                    accelerator.print(logging_string)
-
-                    ### Push to WandB ###
-                    accelerator.log(model_log, step=global_step)
+                    accelerator.print(logging_string)  # Print to Console
+                    accelerator.log(model_log, step=global_step)  # Push to WandB
 
                     ### Reset Log for Next Accumulation ###
                     model_log = reset_log(model_log)
@@ -416,9 +354,6 @@ def main():
                 if accelerator.is_main_process:
                     if val_images is None:
                         ### If we dont have a val images folder, just use the last batch as our validation images ###
-                        ### Not ideal as we may have some random transforms on these images, but its close enough ###
-                        ### If our batch size is smaller than how many we want to generate, we just will take whatever ###
-                        ### is in the batch size to keep this simple ###
                         batch_size = len(pixel_values)
                         num_random_gens = train_cfg["num_val_random_samples"]
                         if batch_size < num_random_gens:
@@ -434,7 +369,7 @@ def main():
                     save_orig_and_generated_images(
                         original_images=images_to_plot,
                         generated_image_tensors=reconstructions.detach(),
-                        path_to_save_folder=args.path_to_save_gens,
+                        path_to_save_folder=args.working_directory,
                         step=global_step,
                         accelerator=accelerator
                     )
