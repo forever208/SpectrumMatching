@@ -168,7 +168,7 @@ It is time to start training the VAE model! Now I hate config files as much as t
 
 #### Define the VAE Structure
 
-In the [```ldm.yaml```](configs/ldm.yaml) you will find the VAE structure as the following:
+In the [```ldm.yaml```](configs/ldm_f8d4.yaml) you will find the VAE structure as the following:
 
 ```
 img_size: 256

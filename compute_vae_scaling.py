@@ -15,7 +15,7 @@ def main(args):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     ### Load VAE Config ###
-    with open("configs/ldm.yaml", "r") as f:
+    with open("configs/ldm_f8d4.yaml", "r") as f:
         vae_config = yaml.safe_load(f)
         config = LDMConfig(**vae_config["vae"])
 

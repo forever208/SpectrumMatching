@@ -3,7 +3,7 @@ bitsandbytes==0.46.0
 datasets==3.6.0
 huggingface_hub==0.32.2
 lpips==0.1.4
-numpy==1.22.4
+numpy==1.23.0
 packaging==21.3
 Pillow==11.2.1
 taming_transformers==0.0.1
@@ -14,4 +14,3 @@ transformers==4.52.4
 wandb==0.20.1
 xformers==0.0.26.post1
 diffusers==0.33.1
-matplotlib==3.9.4

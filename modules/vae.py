@@ -4,8 +4,8 @@ import torch.nn.functional as F
 from .layers import ResidualBlock2D, UpSampleBlock2D, DownSampleBlock2D
 from .transformer import Attention
 
-class EncoderBlock2D(nn.Module):
 
+class EncoderBlock2D(nn.Module):
     """
     The Encoder block is a stack of Residual Blocks with an optional
     downsampling layer to reduce the image size
@@ -35,19 +35,19 @@ class EncoderBlock2D(nn.Module):
                  downsample_kernel_size = 3):
         
         super(EncoderBlock2D, self).__init__()
-        
         self.blocks = nn.ModuleList()
 
         for i in range(num_residual_blocks):       
             conv_in_channels = in_channels if i == 0 else out_channels
             self.blocks.append(
-                ResidualBlock2D(in_channels=conv_in_channels, 
-                                out_channels=out_channels,
-                                groupnorm_groups=groupnorm_groups,
-                                dropout_p=dropout_p, 
-                                time_embed_proj=False, 
-                                class_embed_proj=False,
-                                norm_eps=norm_eps
+                ResidualBlock2D(
+                    in_channels=conv_in_channels,
+                    out_channels=out_channels,
+                    groupnorm_groups=groupnorm_groups,
+                    dropout_p=dropout_p,
+                    time_embed_proj=False,
+                    class_embed_proj=False,
+                    norm_eps=norm_eps
                         )
                 )
             
@@ -58,12 +58,10 @@ class EncoderBlock2D(nn.Module):
                                                 kernel_size=downsample_kernel_size)
 
     def forward(self, x, time_embed=None):
-
         for block in self.blocks:
             x = block(x, time_embed)
-        
-        x = self.downsample(x)
 
+        x = self.downsample(x)
         return x
 
 
@@ -105,14 +103,15 @@ class DecoderBlock2D(nn.Module):
         for i in range(num_residual_blocks):       
             conv_in_channels = in_channels if i == 0 else out_channels
             self.blocks.append(
-                ResidualBlock2D(in_channels=conv_in_channels, 
-                                out_channels=out_channels,
-                                groupnorm_groups=groupnorm_groups,
-                                dropout_p=dropout_p, 
-                                time_embed_proj=False, 
-                                class_embed_proj=False,
-                                norm_eps=norm_eps
-                        )
+                ResidualBlock2D(
+                    in_channels=conv_in_channels,
+                    out_channels=out_channels,
+                    groupnorm_groups=groupnorm_groups,
+                    dropout_p=dropout_p,
+                    time_embed_proj=False,
+                    class_embed_proj=False,
+                    norm_eps=norm_eps
+                    )
                 )
             
         self.upsample = nn.Identity()
@@ -122,23 +121,18 @@ class DecoderBlock2D(nn.Module):
                                             kernel_size=upsample_kernel_size)
 
     def forward(self, x, time_embed=None):
-
         for block in self.blocks:
             x = block(x, time_embed)
         
         x = self.upsample(x)
-
         return x
 
 
 class VAEAttentionResidualBlock(nn.Module):
-
     """
     In the implementation of autoencoder_kl (https://github.com/huggingface/diffusers/blob/v0.32.2/src/diffusers/models/autoencoders/autoencoder_kl.py)
-    
     After all the ResidualBlocks of the Encoder, and at the start of the Decoder there is a ResidualBlock+Self-Attention that they call the UNetMidBlock2D. 
     This class is exactly that, where each Block starts with 1 Residual Block, and then we toggle between Attention and Residual Blocks.
-
     Args:
         - in_channels: Number of input channels to our Block
         - dropout_p: What dropout probability do you want to use?
@@ -176,7 +170,6 @@ class VAEAttentionResidualBlock(nn.Module):
 
         ### For Every Layer, Create an Attention + Residual Block Stack ###
         for _ in range(num_layers):
-
             self.attentions.append(
                 Attention(
                     embedding_dimension=in_channels,
@@ -198,24 +191,17 @@ class VAEAttentionResidualBlock(nn.Module):
                 )
             )
 
-    def forward(self, 
-                x, 
-                time_embed=None):
-
+    def forward(self, x, time_embed=None):
         x = self.resnets[0](x, time_embed=time_embed)
-
         for attn, res in zip(self.attentions, self.resnets[1:]):
             x = attn(x)
             x = res(x, time_embed)
-        
         return x
 
 
 class VAEEncoder(nn.Module):
-
     """
     Encoder for the Variational AutoEncoder
-
     Args:
         - in_channels: Number of input channels in our images
         - out_channels: The latent dimension output of our encoder
@@ -231,7 +217,6 @@ class VAEEncoder(nn.Module):
         - downsample_kernel_size: What kernel size for downsampling?
 
     """
-
     def __init__(self, 
                  in_channels = 3, 
                  out_channels = 4, 
@@ -252,7 +237,6 @@ class VAEEncoder(nn.Module):
         self.latent_channels = out_channels
         self.residual_layers_per_block = residual_layers_per_block
         self.channels_per_block = channels_per_block
-        
         self.conv_in = nn.Conv2d(in_channels=in_channels, 
                                  out_channels=self.channels_per_block[0],
                                  kernel_size=3, 
@@ -263,11 +247,9 @@ class VAEEncoder(nn.Module):
 
         output_channels = self.channels_per_block[0]
         for i, channels in enumerate(self.channels_per_block):
-
             in_channels = output_channels
             output_channels = self.channels_per_block[i]
             is_final_block = (i==len(self.channels_per_block)-1)
-            
             self.encoder_blocks.append(
                 EncoderBlock2D(
                     in_channels=in_channels, 
@@ -299,27 +281,24 @@ class VAEEncoder(nn.Module):
                                      eps=1e-6)
         
         conv_out_channels = 2 * self.latent_channels if double_z else self.latent_channels
-   
         self.conv_out = nn.Conv2d(self.channels_per_block[-1],
                                   conv_out_channels, # We want 4 latent channels (so 4 for mean and 4 for std)
                                   kernel_size=3,
                                   padding="same")
     
     def forward(self, x):
-
         x = self.conv_in(x)
-
         for block in self.encoder_blocks:
             x = block(x)
 
         x = self.attn_block(x)
-
         x = self.out_norm(x)
         x = F.silu(x)
         x = self.conv_out(x)
 
         return x
-    
+
+
 class VAEDecoder(nn.Module):
 
     """
@@ -411,33 +390,25 @@ class VAEDecoder(nn.Module):
                                   padding="same")
     
     def forward(self, x):
-
         x = self.conv_in(x)
-
         x = self.attn_block(x)
-
         for block in self.decoder_blocks:
             x = block(x)
-
         x = self.out_norm(x)
         x = F.silu(x)
         x = self.conv_out(x)
 
         return x
 
-class EncoderDecoder(nn.Module):
 
+class EncoderDecoder(nn.Module):
     """
     Putting the Encoder/Decoder together so we can pass it into another class
     to perform the VAE or VQVAE Task
     """
-    
     def __init__(self, config):
-
         super(EncoderDecoder, self).__init__()
-
         self.config = config
-
         self.encoder = VAEEncoder(in_channels=config.in_channels, 
                                   out_channels=config.latent_channels, 
                                   double_z=not config.quantize,
@@ -479,60 +450,42 @@ class EncoderDecoder(nn.Module):
         x = self.decoder(x)
         return x
 
+
 class VAE(EncoderDecoder):
-    
     """
     Variational AutoEncoder as Described in Auto-Encoding Variational Bayes
     https://arxiv.org/pdf/1312.6114
-
         - forward method is for training our VAE
         - encode/decode is scaled and is for Diffusion Training
     """
 
     def __init__(self, config):
         super(VAE, self).__init__(config=config)
-
         self.config = config
     
     def kl_loss(self, mean, logvar):
-        
         var = torch.exp(logvar)
-
         ### Add the KL Loss Across the Channel, Height, Width ###
-        kl_loss = -0.5 * torch.sum(
-            1 + logvar - mean**2 - var, 
-            dim=[1,2,3]
-        )
-
+        kl_loss = -0.5 * torch.sum(1 + logvar - mean**2 - var, dim=[1,2,3])
         return kl_loss  
 
     def sample_z(self, mu, logvar):
-        
         ### Compute sigma from logvar ###
         sigma = torch.exp(0.5 * logvar)
-
         ### Sample Standard Gaussian Noise ###
         noise = torch.randn_like(sigma, device=sigma.device, dtype=sigma.dtype)
-        
         ### Reparameterization Trick ###
         z = mu + sigma * noise
         
         return z
     
-    def encode(self, 
-               x, 
-               return_stats=False,
-               scale_factor=None):
-        
+    def encode(self, x, return_stats=False, scale_factor=None):
         ### Encode to (B x 2*L x H x W) ###
         encoded = self.forward_enc(x)
-        
         ### Chunk Channel Dimension for Mean and Log Var ###
         mu, logvar = torch.chunk(encoded, chunks=2, dim=1)
-        
         ### Clamp Logvar so when we exponentiate later, no numerical instability ###
         logvar = torch.clamp(logvar, min=-30.0, max=20.0)
-
         ### Sample Noise from Predicted Distribution ###
         z = self.sample_z(mu, logvar) 
         
@@ -546,7 +499,6 @@ class VAE(EncoderDecoder):
                 scale_factor = 1
 
         z = z * scale_factor
-        
         output = {"posterior": z}
 
         if return_stats:
@@ -556,9 +508,7 @@ class VAE(EncoderDecoder):
         return output
 
     def decode(self, z, scale_factor=None):
-
         x = self.forward_dec(z)
-        
         ### Unscale the Embeddings by the scale_factor ###
         if scale_factor is None:
             if self.config.vae_scale_factor is not None:
@@ -567,70 +517,56 @@ class VAE(EncoderDecoder):
                 scale_factor = 1.0
 
         x = x / scale_factor
-        
         return x
     
     def forward(self, x):
-
         ### Encode and get Statistics ###
         output = self.encode(x, return_stats=True)
-      
         ### Reconstruct w/ Decoder ###
         reconstruction = self.forward_dec(output["posterior"])
         output["reconstruction"] = reconstruction
-
         ### Compute KL Loss ###
         kl_loss = self.kl_loss(output["mu"], output["logvar"])
         output["kl_loss"] = kl_loss
 
         return output
 
-class VQVAE(EncoderDecoder):
 
+class VQVAE(EncoderDecoder):
     """
     Vector-Quantized Variational AutoEncoder as described in 
     Neural Discrete Representation Learning
     https://arxiv.org/abs/1711.00937
     """
-
     def __init__(self, config):
         super(VQVAE, self).__init__(config=config)
-
         self.config = config
-        
         ### Ensure Quantization On in VQVAE ###
         self.config.quantize = True
-        
         ### Projections To/From VQ Embed Dim ###
         self.conv_quantize_proj = nn.Conv2d(config.latent_channels, 
                                             config.vq_embed_dim, 
                                             kernel_size=1,
                                             stride=1)
-        
         self.conv_latent_proj = nn.Conv2d(config.vq_embed_dim,
                                           config.latent_channels, 
                                           kernel_size=1,
                                           stride=1)
-
         ### Quantization Codebook ###
         self.embedding = nn.Embedding(config.codebook_size, config.vq_embed_dim)
         self.embedding.weight.data.uniform_(-1.0 / config.codebook_size, 1.0 / config.codebook_size)
 
     def quantize(self, z, compute_loss=False, compute_perplexity=False):
-
         ### Reshape to (B*H*W x E) ###
         z = z.permute(0,2,3,1)
         z_flattened = z.reshape(-1, self.config.vq_embed_dim)
-        
         ### Compute Distance Between Each Embedding and Codevectors ###
         pairwise_dist = torch.cdist(z_flattened, self.embedding.weight)
-        
         ### For each of our input vectors find the index of the closest codevector ###
         closest = torch.argmin(pairwise_dist, dim=-1)
-   
         ### Index our Embedding Matrix to grab cooresponding codevectors ###
         quantized = self.embedding(closest).reshape(*z.shape)
-        
+
         ### Compute CodeBook and Commitment Loss ###
         if compute_loss:
             codebook_loss = torch.mean((quantized - z.detach())**2)
@@ -639,18 +575,15 @@ class VQVAE(EncoderDecoder):
 
         ### Compute Codebook Perplexity ###
         if compute_perplexity:
-
             ### One Hot Encode Index ###
             one_hot_closest = torch.zeros(closest.shape[0], self.config.codebook_size, device=z.device)
             one_hot_closest[list(range(closest.shape[0])), closest] = 1
             util_proportion = torch.mean(one_hot_closest, dim=0)
-
             ### Compute Perplexity ###
             perplexity = torch.exp(-torch.sum(util_proportion * torch.log(util_proportion + 1e-8)))
 
         ### Copy Gradients (Straight Through Estimator) ###
         quantized = z + (quantized - z).detach()
-
         ### Permute Back to Original Image Shape (B,C,H,W) ###
         quantized = quantized.permute(0,3,2,1)
 
@@ -666,23 +599,16 @@ class VQVAE(EncoderDecoder):
         return output
 
     def encode(self, x):
-        
         x = self.forward_enc(x)
-
-        z = self.conv_quantize_proj(x) 
-
+        z = self.conv_quantize_proj(x)
         return self.quantize(z)
 
     def decode(self, z):
-        
         x = self.conv_latent_proj(z)
-
         x = self.forward_dec(x)
-
         return x
 
     def forward(self, x):
-        
         ### Encode ###
         x = self.forward_enc(x)
 
@@ -690,9 +616,7 @@ class VQVAE(EncoderDecoder):
         z = self.conv_quantize_proj(x)
 
         ### Quantize Embeddings ###
-        output = self.quantize(z, 
-                               compute_loss=True,
-                               compute_perplexity=True)
+        output = self.quantize(z, compute_loss=True, compute_perplexity=True)
 
         ### Project Quantized Back to Latent Dimension ###
         x = self.conv_latent_proj(output["quantized"])

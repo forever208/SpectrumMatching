@@ -15,7 +15,8 @@ from utils import load_val_images, save_orig_and_generated_images, count_num_par
 from modules import VAE, LDMConfig, PatchGAN, init_weights
 from modules import LPIPS as mylpips
 from dataset import get_dataset
-from eval_utils.utils import calculate_fid_given_paths, calculate_psnr_between_folders
+from eval_utils.utils import calculate_psnr_between_folders
+from eval_utils.fid_score import calculate_fid_given_paths
 from torchmetrics import StructuralSimilarityIndexMeasure
 import shutil
 
@@ -64,7 +65,7 @@ def main():
 
     ### Load Model ###
     model = VAE(config).to(accelerator.device)
-    latent_res = (config.img_size // (len(config.vae_channels_per_block)-1)**2)
+    latent_res = (config.img_size // (2**(len(config.vae_channels_per_block)-1)))
     accelerator.print(f"LATENT SPACE DIMENSIONS: {config.latent_channels, latent_res, latent_res}")
 
     ### Load LPIPS and SSIM ###
@@ -152,14 +153,14 @@ def main():
             train_cfg["lr_scheduler"],
             optimizer=optimizer,
             num_training_steps=train_cfg["total_training_iterations"],
-            num_warmup_steps=train_cfg["lr_warmup_steps"]
+            num_warmup_steps=train_cfg["lr_warmup_steps"] * accelerator.num_processes
         )
     if use_disc:
         disc_lr_scheduler = get_scheduler(
                 train_cfg["disc_lr_scheduler"],
                 optimizer=disc_optimizer,
                 num_training_steps=train_cfg["total_training_iterations"],
-                num_warmup_steps=train_cfg["disc_lr_warmup_steps"],
+                num_warmup_steps=train_cfg["disc_lr_warmup_steps"] * accelerator.num_processes,
             )
 
     ### Prepare Everything ###
@@ -207,6 +208,8 @@ def main():
     eval_recon_imgs_path = os.path.join(args.eval_dir, "eval_recon_imgs")
     eval_lpips = []
     eval_ssim = []
+    for key, value in train_cfg.items():
+        accelerator.print(f"{key}: {value}")
 
     while train:
         model.train()
@@ -417,9 +420,7 @@ def main():
 
                     ### evaluate rFID ###
                     accelerator.print(f"Evaluating rFID...")
-                    fid = calculate_fid_given_paths(
-                        [eval_org_imgs_path, eval_recon_imgs_path], batch_size=50, dims=2048, device=pixel_values.device
-                    )
+                    fid = calculate_fid_given_paths([eval_org_imgs_path, eval_recon_imgs_path], device=pixel_values.device)
 
                     accelerator.print(f"Evaluating PSNR...")
                     psnr_values = calculate_psnr_between_folders(eval_org_imgs_path, eval_recon_imgs_path)
@@ -439,12 +440,13 @@ def main():
                     accelerator.print(f"SSIM at step {global_step} is {eval_ssim}")
 
                     with open(os.path.join(args.working_directory, f'eval.log'), 'a') as f:
-                        print(f'step={global_step} rfid={fid} PSNR={avg_psnr} LPIPS={eval_lpips} SSIM={eval_ssim}', file=f)
+                        print(f'step={global_step} rFID={fid:.5f} PSNR={avg_psnr:.5f} LPIPS={eval_lpips:.5f} SSIM={eval_ssim:.5f}', file=f)
 
                     # reset
                     shutil.rmtree(eval_org_imgs_path)  # remove the image folder
                     shutil.rmtree(eval_recon_imgs_path)  # remove the image folder
                     eval_lpips = []
+                    eval_ssim = []
                     model.train()
 
                 torch.cuda.empty_cache()
