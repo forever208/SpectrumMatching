@@ -156,12 +156,20 @@ def main():
             num_warmup_steps=train_cfg["lr_warmup_steps"] * accelerator.num_processes
         )
     if use_disc:
+        disc_steps = (train_cfg["total_training_iterations"] - train_cfg["disc_start"]) // 2
+        gen_steps = train_cfg["total_training_iterations"] - disc_steps
         disc_lr_scheduler = get_scheduler(
-                train_cfg["disc_lr_scheduler"],
-                optimizer=disc_optimizer,
-                num_training_steps=train_cfg["total_training_iterations"],
-                num_warmup_steps=train_cfg["disc_lr_warmup_steps"] * accelerator.num_processes,
-            )
+            train_cfg["disc_lr_scheduler"],
+            optimizer=disc_optimizer,
+            num_training_steps=disc_steps,
+            num_warmup_steps=train_cfg["disc_lr_warmup_steps"] * accelerator.num_processes,
+        )
+        lr_scheduler = get_scheduler(
+            train_cfg["lr_scheduler"],
+            optimizer=optimizer,
+            num_training_steps=gen_steps,
+            num_warmup_steps=train_cfg["lr_warmup_steps"] * accelerator.num_processes
+        )
 
     ### Prepare Everything ###
     model, optimizer, lr_scheduler, dataloader, eval_dataloader, = accelerator.prepare(
@@ -332,8 +340,10 @@ def main():
                         else:
                             v = round(v, 2)
                         logging_string += f"|{k}: {v}"
-                    accelerator.print(logging_string)  # Print to Console
-                    accelerator.log(model_log, step=global_step)  # Push to WandB
+
+                    if global_step % 100 == 0:
+                        accelerator.print(f"step {global_step}: {logging_string}")  # Print to Console
+                        accelerator.log(model_log, step=global_step)  # Push to WandB
                     model_log = reset_log(model_log)  # Reset Log for Next Accumulation
                     model_log.pop("lr")
 
@@ -348,8 +358,10 @@ def main():
                         else:
                             v = round(v, 2)
                         logging_string += f"|{k}: {v}"
-                    accelerator.print(logging_string)  # Print to Console
-                    accelerator.log(disc_log, step=global_step)  # Push to WandB
+
+                    if global_step % 100 == 1:
+                        accelerator.print(f"step {global_step}: {logging_string}")  # Print to Console
+                        accelerator.log(disc_log, step=global_step)  # Push to WandB
                     disc_log = reset_log(disc_log)  # Reset Log for Next Accumulation
                     disc_log.pop("disc_lr")
 

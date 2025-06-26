@@ -1,7 +1,7 @@
 vae:
 
   ### VAE Structure ###
-  img_size: 256
+  img_size: 128
   in_channels: 3
   out_channels: 3
   latent_channels: 4

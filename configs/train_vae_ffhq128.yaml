@@ -7,7 +7,7 @@ training_args:
   disc_kernel_size: 4                           # PatchGAN Conv Kernel Size
   disc_leaky_relu: 0.2                          # PatchGAN LeakyReLU Slop
   disc_learning_rate: 0.00005                   # Discriminator Learning Rate
-  disc_lr_scheduler: constant_with_warmup       # Discriminator LR Scheduler "constant", "constant_with_warmup", "linear", "cosine"
+  disc_lr_scheduler: cosine                     # Discriminator LR Scheduler "constant", "constant_with_warmup", "linear", "cosine"
   disc_lr_warmup_steps: 2000                    # Discriminator LR Warmup Steps
   disc_start: 50001                             # Discriminator Delayed Starting Iteration (batch_sz 48)
   disc_weight: 0.5                              # Discriminator Loss Weight
@@ -20,19 +20,19 @@ training_args:
 
   ### Training Config ###
   learning_rate: 0.00005                        # VAE Training Learning Rate  (batch_sz 48)
-  lr_scheduler: constant_with_warmup            # LR Scheduler
+  lr_scheduler: cosine            # LR Scheduler
   lr_warmup_steps: 2000                         # LR Warmup Steps
-  total_training_iterations: 200000             # Total Training Iterations  (batch_sz 48)
-  checkpoint_iterations: 10000                   # Checkpoint Iteration Frequency
-  per_gpu_batch_size: 12                        # Batch per GPU (multipled by n_gpus in accelerate)
+  total_training_iterations: 400000             # Total Training Iterations  (batch_sz 48)
+  checkpoint_iterations: 10000                  # Checkpoint Iteration Frequency
+  per_gpu_batch_size: 24                        # Batch per GPU (multipled by n_gpus in accelerate)
   gradient_accumulations_steps: 1               # Split per GPU batch into accumulation steps
   max_grad_norm: 1.0                            # Max Grad Norm for Clipping
   reconstruction_loss_fn: l1                    # What Reconstruction Loss do you want? ("l1", "l2")
   kl_weight: 0.000001                           # KL Regularization Weight
   num_val_random_samples: 4                     # How many random samples do you want to plot reconstructions for? (max of the set batch per gpu)
   val_img_folder_path: null                     # Folder of images you want to plot during training, if you dont want to random sample
-  val_generation_freq: 5000                     # How often do you want to test generations?
-  num_eval_images: 30000                        # number of images to compute rFID, PSNR and so on
+  val_generation_freq: 10000                     # How often do you want to test generations?
+  num_eval_images: 50000                        # number of images to compute rFID, PSNR and so on
   pixelwise_average: True                       # Do you want to average all the pixels (True) or sum pixels and average the batch (False)
   optimizer_beta1: 0.9                          # VAdamW Optimizer Beta1
   optimizer_beta2: 0.999                        # AdamW Optimizer Beta2
