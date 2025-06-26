@@ -19,7 +19,7 @@ vae:
   vae_up_down_kernel_size: 3
 
   ### Additional VQ Configs ###
-  quantize: False
+  quantize: True
   codebook_size: 16384
   vq_embed_dim: 4
   commitment_beta: 0.25
@@ -79,6 +79,6 @@ unet:
 scaling_constants:
 
   #### Precomputed Constants ###
-  celeba256: 0.9010
+  celebahq: 0.8924759
   imagenet: 0.9515730
   conceptual_captions: 0.9091397

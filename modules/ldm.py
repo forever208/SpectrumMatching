@@ -6,20 +6,15 @@ from utils import save_generated_images
 
 from .vae import VAE, VQVAE
 from .unet import UNet2DModel
-from .embeddings import PositionalEncoding, ClassConditionalEmbeddings, \
-    TextConditionalEmbeddings
+from .embeddings import PositionalEncoding, ClassConditionalEmbeddings, TextConditionalEmbeddings
 from .scheduler import Sampler
 
-loss_functions = {"mse": nn.MSELoss(), 
-                  "mae": nn.L1Loss(), 
-                  "huber": nn.HuberLoss()}
+loss_functions = {"mse": nn.MSELoss(), "mae": nn.L1Loss(), "huber": nn.HuberLoss()}
+
 
 class LDM(nn.Module):
-    
     def __init__(self, config):
-    
         super(LDM, self).__init__()
-
         self.config = config
 
         ### Load VAE Model ###
@@ -67,7 +62,7 @@ class LDM(nn.Module):
 
     def _load_vae_state_dict(self, state_dict):
         sucess = self.vae.load_state_dict(state_dict)
-        print(sucess)
+        print(f"VAE load state: {sucess}")
         
     @torch.no_grad()
     def _vae_encode_images(self, x, scale_factor=None):
@@ -87,23 +82,19 @@ class LDM(nn.Module):
         
         ### If we have text conditioning, then encode ###
         if self.config.text_conditioning:
-            
             text_conditioning = self.text_encoder(
                 batch_size=images.shape[0],
                 text_conditioning=text_conditioning, 
                 text_attention_mask=text_attention_mask, 
                 cfg_dropout_prob=cfg_dropout_prob
-
             )
 
         ### Get Class Conditioning ###
         if self.config.class_conditioning:
-            
             class_conditioning = self.class_encoder(
                 batch_size=images.shape[0],
                 class_conditioning=class_conditioning, 
                 cfg_dropout_prob=cfg_dropout_prob
-
             )
 
         ### Compress Images using AutoEncoder ###
@@ -144,13 +135,8 @@ class LDM(nn.Module):
 
             model = CLIPTextModel.from_pretrained(self.config.text_conditioning_hf_model).to(device)
             tokenizer = CLIPTokenizer.from_pretrained(self.config.text_conditioning_hf_model)
-
             text_conditioning = text_conditioning.strip()
-
-            tokenized = tokenizer(text_conditioning,
-                                  truncation=True, 
-                                  max_length=77)
-            
+            tokenized = tokenizer(text_conditioning, truncation=True, max_length=77)
             input_ids = torch.tensor(tokenized.input_ids).to(device).unsqueeze(0)
             
             with torch.no_grad():
@@ -184,6 +170,5 @@ class LDM(nn.Module):
         ### Decode Latent Back to Image Space ###
         images = self._vae_decode_images(image.to(device))
 
-        save_generated_images(images,
-                              path_to_save=path_to_save)    
+        save_generated_images(images, path_to_save=path_to_save)
 

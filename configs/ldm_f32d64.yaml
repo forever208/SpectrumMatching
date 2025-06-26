@@ -4,7 +4,7 @@ vae:
   img_size: 256
   in_channels: 3
   out_channels: 3
-  latent_channels: 4
+  latent_channels: 64
   residual_layers_per_block: 2
   attention_layers: 1
   attention_residual_connections: True
@@ -12,6 +12,8 @@ vae:
   pre_decoder_latent_proj: True
   vae_channels_per_block:
     - 128
+    - 128
+    - 256
     - 256
     - 512
     - 512
