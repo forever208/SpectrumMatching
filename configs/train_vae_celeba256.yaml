@@ -1,7 +1,7 @@
 training_args:
 
   ### Discriminator Config ###
-  use_patchgan: False                            # Do you want to use PatchGAN?
+  use_patchgan: True                            # Do you want to use PatchGAN?
   disc_start_dim: 64                            # PatchGAN starting channel dim
   disc_depth: 3                                 # PatchGAN Depth
   disc_kernel_size: 4                           # PatchGAN Conv Kernel Size
@@ -22,25 +22,29 @@ training_args:
   learning_rate: 0.00005                        # VAE Training Learning Rate  (batch_sz 48)
   lr_scheduler: constant_with_warmup            # LR Scheduler
   lr_warmup_steps: 2000                         # LR Warmup Steps
-  total_training_iterations: 200000             # Total Training Iterations  (batch_sz 48)
-  checkpoint_iterations: 10000                   # Checkpoint Iteration Frequency
+  total_training_iterations: 500000             # Total Training Iterations  (batch_sz 48)
+  checkpoint_iterations: 10000                  # Checkpoint Iteration Frequency
   per_gpu_batch_size: 12                        # Batch per GPU (multipled by n_gpus in accelerate)
   gradient_accumulations_steps: 1               # Split per GPU batch into accumulation steps
   max_grad_norm: 1.0                            # Max Grad Norm for Clipping
   reconstruction_loss_fn: l1                    # What Reconstruction Loss do you want? ("l1", "l2")
-  kl_weight: 0.000001                           # KL Regularization Weight
+  kl_weight: 0.0                                # KL Regularization Weight
+  esm_weight: 0.0                               # ESM Regularization Weight
+  delta: 0.0                                    # power law shift of ESM Regularization
+  rmsc_weight: 0.0                              # RMSC Regularization Weight
+  blk_sz: 8                                     # block size of DCT for Decoding Spectrum Marching (DSM)
   num_val_random_samples: 4                     # How many random samples do you want to plot reconstructions for? (max of the set batch per gpu)
   val_img_folder_path: null                     # Folder of images you want to plot during training, if you dont want to random sample
-  val_generation_freq: 5000                     # How often do you want to test generations?
-  num_eval_images: 30000                        # number of images to compute rFID, PSNR and so on
+  val_generation_freq: 10000                    # How often do you want to test generations?
+  num_eval_images: 50000                        # number of images to compute rFID, PSNR and so on
   pixelwise_average: True                       # Do you want to average all the pixels (True) or sum pixels and average the batch (False)
   optimizer_beta1: 0.9                          # VAdamW Optimizer Beta1
   optimizer_beta2: 0.999                        # AdamW Optimizer Beta2
   optimizer_weight_decay: 0.005                 # AdamW Optimizer Weight Decay
 
   ### Dataset Config ###
-  pin_memory: False                              # Do you want to pin_memory on Dataloader?
-  num_workers: 8                               # Number of CPU workers for DataLoading
+  pin_memory: True                              # Do you want to pin_memory on Dataloader?
+  num_workers: 12                               # Number of CPU workers for DataLoading
   random_resize: False                          # Do you want to random resize in image transforms. If false, defauls to resize
   interpolation: bilinear                       # What interpolation mode do you want to use? ("nearest", "bilinear", "bicubic")
-  random_flip_p: 0.0                            # Random Horizontal Flip Probability
+  random_flip_p: 0.5                            # Random Horizontal Flip Probability

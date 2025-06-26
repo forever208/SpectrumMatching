@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .layers import ResidualBlock2D, UpSampleBlock2D, DownSampleBlock2D
 from .transformer import Attention
+from utils_DCT import latent_spectral_reg_dct, split_into_blocks_torch, combine_blocks_torch, dct_2d_torch_unified, idct_2d_torch_unified, rmsc, gaussian_blur, downsample_to
 
 
 class EncoderBlock2D(nn.Module):
@@ -258,7 +259,7 @@ class VAEEncoder(nn.Module):
                     groupnorm_groups=groupnorm_groups,
                     norm_eps=norm_eps, 
                     num_residual_blocks=self.residual_layers_per_block,
-                    add_downsample=not is_final_block, 
+                    add_downsample=not is_final_block,  # perform 2x spacial downsampling if not the last block
                     downsample_factor=downsample_factor, 
                     downsample_kernel_size=downsample_kernel_size
                 )
@@ -465,38 +466,34 @@ class VAE(EncoderDecoder):
     
     def kl_loss(self, mean, logvar):
         var = torch.exp(logvar)
-        ### Add the KL Loss Across the Channel, Height, Width ###
         kl_loss = -0.5 * torch.sum(1 + logvar - mean**2 - var, dim=[1,2,3])
-        return kl_loss  
+        return kl_loss
 
-    def sample_z(self, mu, logvar):
-        ### Compute sigma from logvar ###
-        sigma = torch.exp(0.5 * logvar)
-        ### Sample Standard Gaussian Noise ###
-        noise = torch.randn_like(sigma, device=sigma.device, dtype=sigma.dtype)
-        ### Reparameterization Trick ###
-        z = mu + sigma * noise
-        
+    def sample(self, moments, scale_factor=1.0):
+        mean, logvar = torch.chunk(moments, 2, dim=1)
+        logvar = torch.clamp(logvar, -30.0, 20.0)
+        std = torch.exp(0.5 * logvar)
+        z = mean + std * torch.randn_like(mean)
+        z = scale_factor * z
         return z
-    
+
     def encode(self, x, return_stats=False, scale_factor=None):
-        ### Encode to (B x 2*L x H x W) ###
-        encoded = self.forward_enc(x)
-        ### Chunk Channel Dimension for Mean and Log Var ###
-        mu, logvar = torch.chunk(encoded, chunks=2, dim=1)
-        ### Clamp Logvar so when we exponentiate later, no numerical instability ###
-        logvar = torch.clamp(logvar, min=-30.0, max=20.0)
-        ### Sample Noise from Predicted Distribution ###
-        z = self.sample_z(mu, logvar) 
+        encoded = self.forward_enc(x)  # (b, ,2*c, h, w)
+
+        # sample from predicted distribution p(z|x)
+        mu, logvar = torch.chunk(encoded, chunks=2, dim=1)  # get mean and logvar (b, c, h, w)
+        logvar = torch.clamp(logvar, min=-30.0, max=20.0)  # Clamp Logvar for numerical stability
+        sigma = torch.exp(0.5 * logvar)  # std
+        noise = torch.randn_like(sigma, device=sigma.device, dtype=sigma.dtype)
+        z = mu + sigma * noise  # Reparameterization Trick
         
         ### Scale z with constant for unit variance ###
-        ### We have to calculate this constant ourselves after
-        ### training the VAE ###
+        ### We have to calculate this constant ourselves after training the VAE ###
         if scale_factor is None:
             if self.config.vae_scale_factor is not None:
                 scale_factor = self.config.vae_scale_factor
             else:
-                scale_factor = 1
+                scale_factor = 1.0
 
         z = z * scale_factor
         output = {"posterior": z}
@@ -508,7 +505,6 @@ class VAE(EncoderDecoder):
         return output
 
     def decode(self, z, scale_factor=None):
-        x = self.forward_dec(z)
         ### Unscale the Embeddings by the scale_factor ###
         if scale_factor is None:
             if self.config.vae_scale_factor is not None:
@@ -516,18 +512,73 @@ class VAE(EncoderDecoder):
             else:
                 scale_factor = 1.0
 
-        x = x / scale_factor
+        z = z / scale_factor
+        x = self.forward_dec(z)
+
         return x
     
-    def forward(self, x):
-        ### Encode and get Statistics ###
+    def forward(self, x, DSM_mask=0, blk_sz=8, delta=0.0):
         output = self.encode(x, return_stats=True)
-        ### Reconstruct w/ Decoder ###
-        reconstruction = self.forward_dec(output["posterior"])
-        output["reconstruction"] = reconstruction
-        ### Compute KL Loss ###
-        kl_loss = self.kl_loss(output["mu"], output["logvar"])
-        output["kl_loss"] = kl_loss
+
+        # KL reg
+        output["kl_loss"] = self.kl_loss(output["mu"], output["logvar"])
+
+        # ESM reg
+        output["sm_rgb"] = latent_spectral_reg_dct(
+            x, output["posterior"],
+            n_bins=16, loss_type="kl", log_power=True, center="mean", remove_dc=True,
+        )
+
+        output["sm_delta"] = latent_spectral_reg_dct(
+            x, output["posterior"],
+            n_bins=16, loss_type="kl", log_power=True, center="none", remove_dc=True, delta=delta
+        )
+
+        # RMSC reg (not used in practice)
+        _, _, hz, wz = output["posterior"].shape
+        downsam_x = gaussian_blur(x, kernel_size=7, sigma=1.2)
+        downsam_x = downsample_to(downsam_x, (hz, wz))
+        x_rmsc = rmsc(downsam_x, patch_sz=1)  # (batch, )
+        z_rmsc = rmsc(output["posterior"], patch_sz=1)  # (batch, )
+        output["rmsc_loss"] = F.mse_loss(x_rmsc, z_rmsc)  # scaler
+
+        # DSM regularization
+        if DSM_mask == 0:
+            output["img"] = x
+        else:
+            # low pass x and latents
+            z = output["posterior"]
+            _, _, H, W = x.shape
+            _, _, h, w = z.shape
+
+            x = split_into_blocks_torch(x, blk_sz)  # (B, C, NUM_blocks, b, b)
+            z = split_into_blocks_torch(z, blk_sz)  # (B, C, num_blocks, b, b)
+
+            x = dct_2d_torch_unified(x, center="none")  # (B, C, NUM_blocks, b, b)
+            z = dct_2d_torch_unified(z, center="none")  # (B, C, num_blocks, b, b)
+
+            max_sum = 2 * (blk_sz - 1)  # 14 for 8x8
+            thresh = max_sum - (DSM_mask - 1)  # 15 - k for 8x8
+
+            u = torch.arange(blk_sz, device=x.device).view(blk_sz, 1)
+            v = torch.arange(blk_sz, device=x.device).view(1, blk_sz)
+            hf_mask = (u + v) >= thresh  # (8,8) True => to be zeroed
+
+            x[..., hf_mask] = 0.0
+            z[..., hf_mask] = 0.0  # low-pass filter
+
+            x = idct_2d_torch_unified(x, center="none")  # (B, C, NUM_blocks, b, b)
+            z = idct_2d_torch_unified(z, center="none")  # (B, C, num_blocks, b, b)
+
+            # x = torch.clamp(x, -1., 1.)
+
+            x = combine_blocks_torch(x, H, W, blk_sz)  # (B, C, H, W)
+            z = combine_blocks_torch(z, h, w, blk_sz)  # (B, C, h, w)
+
+            output["posterior"] = z
+            output["img"] = x
+
+        output["reconstruction"] = self.forward_dec(output["posterior"])
 
         return output
 
@@ -558,14 +609,14 @@ class VQVAE(EncoderDecoder):
 
     def quantize(self, z, compute_loss=False, compute_perplexity=False):
         ### Reshape to (B*H*W x E) ###
-        z = z.permute(0,2,3,1)
+        z = z.permute(0, 2, 3, 1)  # (b, c, h, w) --> (b, h, w, c)
         z_flattened = z.reshape(-1, self.config.vq_embed_dim)
         ### Compute Distance Between Each Embedding and Codevectors ###
-        pairwise_dist = torch.cdist(z_flattened, self.embedding.weight)
+        pairwise_dist = torch.cdist(z_flattened, self.embedding.weight)  # (b*h*w, codebook_siz)
         ### For each of our input vectors find the index of the closest codevector ###
-        closest = torch.argmin(pairwise_dist, dim=-1)
+        closest = torch.argmin(pairwise_dist, dim=-1)  # (b*h*w, )
         ### Index our Embedding Matrix to grab cooresponding codevectors ###
-        quantized = self.embedding(closest).reshape(*z.shape)
+        quantized = self.embedding(closest).reshape(*z.shape)  # (b, h, w, c)
 
         ### Compute CodeBook and Commitment Loss ###
         if compute_loss:
@@ -573,21 +624,21 @@ class VQVAE(EncoderDecoder):
             commitment_loss = torch.mean((quantized.detach() - z)**2)
             loss = codebook_loss + self.config.commitment_beta * commitment_loss
 
-        ### Compute Codebook Perplexity ###
+        ### Compute How effectively the codebook is used ###
         if compute_perplexity:
             ### One Hot Encode Index ###
             one_hot_closest = torch.zeros(closest.shape[0], self.config.codebook_size, device=z.device)
             one_hot_closest[list(range(closest.shape[0])), closest] = 1
-            util_proportion = torch.mean(one_hot_closest, dim=0)
+            util_proportion = torch.mean(one_hot_closest, dim=0)  # (codebook_size, )
             ### Compute Perplexity ###
             perplexity = torch.exp(-torch.sum(util_proportion * torch.log(util_proportion + 1e-8)))
 
         ### Copy Gradients (Straight Through Estimator) ###
-        quantized = z + (quantized - z).detach()
+        quantized = z + (quantized - z).detach()  # in the backwards pass, d(quant) = d(z), i.e. copy gradient
         ### Permute Back to Original Image Shape (B,C,H,W) ###
         quantized = quantized.permute(0,3,2,1)
-
         output = {"quantized": quantized}
+
         if compute_loss:
             output["codebook_loss"] = codebook_loss
             output["commitment_loss"] = commitment_loss

@@ -27,12 +27,12 @@ def image_transforms(num_channels=3, img_size=256, random_resize=True, interpola
         random_flip_p = 0
     
     image2tensor = transforms.Compose([
-                        transforms.Lambda(lambda img: img.convert("RGB") if num_channels == 3 else img),
-                        resize,
-                        transforms.RandomHorizontalFlip(p=random_flip_p),
-                        transforms.ToTensor(), 
-                        transforms.Normalize([0.5 for _ in range(num_channels)], [0.5 for _ in range(num_channels)]),
-                    ])
+        transforms.Lambda(lambda img: img.convert("RGB") if num_channels == 3 else img),
+        resize,
+        transforms.RandomHorizontalFlip(p=random_flip_p),
+        transforms.ToTensor(),  # (0, 1)
+        transforms.Normalize([0.5 for _ in range(num_channels)], [0.5 for _ in range(num_channels)]),  # (-1, 1)
+    ])
     
     return image2tensor
 
@@ -145,11 +145,14 @@ def get_dataset(dataset, path_to_data, num_channels=3, img_size=256, random_resi
                                      random_flip_p=random_flip_p, 
                                      train=train)
 
-    if dataset == "celebahq":
+    if dataset == "celeba256" or dataset == "ffhq128" or dataset == "ffhq256":
         trainset = GenericImageDataset(path_to_data=path_to_data, transform=img_transform, nested=False, return_classes=False)
         collate_fn = None
-    elif dataset == "imagenet":
+    elif dataset == "imagenet_train":
         trainset = GenericImageDataset(path_to_data=path_to_data, transform=img_transform, nested=True, return_classes=True)
+        collate_fn = None
+    elif dataset == "imagenet_val":
+        trainset = GenericImageDataset(path_to_data=path_to_data, transform=img_transform, nested=False, return_classes=False)
         collate_fn = None
     elif dataset == "conceptual_captions":
         trainset = conceptual_captions(path_to_data, img_transform)
