@@ -152,7 +152,7 @@ def main():
     lr_scheduler = get_scheduler(
             train_cfg["lr_scheduler"],
             optimizer=optimizer,
-            num_training_steps=train_cfg["total_training_iterations"],
+            num_training_steps=train_cfg["total_training_iterations"] * accelerator.num_processes,
             num_warmup_steps=train_cfg["lr_warmup_steps"] * accelerator.num_processes
         )
     if use_disc:
@@ -161,13 +161,13 @@ def main():
         disc_lr_scheduler = get_scheduler(
             train_cfg["disc_lr_scheduler"],
             optimizer=disc_optimizer,
-            num_training_steps=disc_steps,
+            num_training_steps=disc_steps * accelerator.num_processes,
             num_warmup_steps=train_cfg["disc_lr_warmup_steps"] * accelerator.num_processes,
         )
         lr_scheduler = get_scheduler(
             train_cfg["lr_scheduler"],
             optimizer=optimizer,
-            num_training_steps=gen_steps,
+            num_training_steps=gen_steps * accelerator.num_processes,
             num_warmup_steps=train_cfg["lr_warmup_steps"] * accelerator.num_processes
         )
 

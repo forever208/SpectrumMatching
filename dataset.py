@@ -27,12 +27,12 @@ def image_transforms(num_channels=3, img_size=256, random_resize=True, interpola
         random_flip_p = 0
     
     image2tensor = transforms.Compose([
-                        transforms.Lambda(lambda img: img.convert("RGB") if num_channels == 3 else img),
-                        resize,
-                        transforms.RandomHorizontalFlip(p=random_flip_p),
-                        transforms.ToTensor(), 
-                        transforms.Normalize([0.5 for _ in range(num_channels)], [0.5 for _ in range(num_channels)]),
-                    ])
+        transforms.Lambda(lambda img: img.convert("RGB") if num_channels == 3 else img),
+        resize,
+        transforms.RandomHorizontalFlip(p=random_flip_p),
+        transforms.ToTensor(),  # (0, 1)
+        transforms.Normalize([0.5 for _ in range(num_channels)], [0.5 for _ in range(num_channels)]),  # (-1, 1)
+    ])
     
     return image2tensor
 
