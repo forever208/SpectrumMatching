@@ -55,14 +55,14 @@ def save_orig_and_generated_images(original_images, generated_image_tensors, pat
     generated_image_tensors = torch.clamp(generated_image_tensors, -1., 1.)
     generated_image_tensors = (generated_image_tensors + 1) / 2
     generated_image_tensors = generated_image_tensors.cpu().permute(0,2,3,1).numpy()
-    generated_image_tensors = (255 * generated_image_tensors).astype(np.uint8)
+    generated_image_tensors = np.round(255 * generated_image_tensors).astype(np.uint8)
     gen_imgs = [Image.fromarray(img).convert("RGB") for img in generated_image_tensors]
 
     ### Original Images have been scaled to [-1 to 1], rescale back to [0 to 255] ###
     original_images = original_images.float()
     original_images = (original_images + 1) / 2
     original_images = original_images.cpu().permute(0,2,3,1).numpy()
-    original_images = (255 * original_images).astype(np.uint8)
+    original_images = np.round(255 * original_images).astype(np.uint8)
     orig_imgs = [Image.fromarray(img).convert("RGB") for img in original_images]
 
     ### Concat Images (so we can compare real vs reconstruction) ###
@@ -93,7 +93,7 @@ def convert_to_PIL_imgs(image_tensors):
     image_tensors = torch.clamp(image_tensors, -1., 1.)
     image_tensors = (image_tensors + 1) / 2
     image_tensors = image_tensors.cpu().permute(0, 2, 3, 1).numpy()
-    image_tensors = (255 * image_tensors).astype(np.uint8)
+    image_tensors = np.round(255 * image_tensors).astype(np.uint8)
 
     # Convert each tensor to a PIL image
     return [Image.fromarray(img).convert("RGB") for img in image_tensors]
@@ -113,7 +113,7 @@ def save_generated_images(generated_image_tensors, path_to_save_folder=None, ste
     generated_image_tensors = torch.clamp(generated_image_tensors, -1., 1.)
     generated_image_tensors = (generated_image_tensors + 1) / 2
     generated_image_tensors = generated_image_tensors.cpu().permute(0,2,3,1).numpy()
-    generated_image_tensors = (255 * generated_image_tensors).astype(np.uint8)
+    generated_image_tensors = np.round(255 * generated_image_tensors).astype(np.uint8)
     gen_imgs = [Image.fromarray(img).convert("RGB") for img in generated_image_tensors] 
     
     if path_to_save_folder is not None:
