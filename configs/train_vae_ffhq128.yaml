@@ -7,7 +7,7 @@ training_args:
   disc_kernel_size: 4                           # PatchGAN Conv Kernel Size
   disc_leaky_relu: 0.2                          # PatchGAN LeakyReLU Slop
   disc_learning_rate: 0.00005                   # Discriminator Learning Rate
-  disc_lr_scheduler: cosine                     # Discriminator LR Scheduler "constant", "constant_with_warmup", "linear", "cosine"
+  disc_lr_scheduler: constant_with_warmup       # Discriminator LR Scheduler "constant", "constant_with_warmup", "linear", "cosine"
   disc_lr_warmup_steps: 2000                    # Discriminator LR Warmup Steps
   disc_start: 50001                             # Discriminator Delayed Starting Iteration (batch_sz 48)
   disc_weight: 0.5                              # Discriminator Loss Weight
@@ -20,11 +20,11 @@ training_args:
 
   ### Training Config ###
   learning_rate: 0.00005                        # VAE Training Learning Rate  (batch_sz 48)
-  lr_scheduler: cosine            # LR Scheduler
+  lr_scheduler: constant_with_warmup            # LR Scheduler
   lr_warmup_steps: 2000                         # LR Warmup Steps
   total_training_iterations: 400000             # Total Training Iterations  (batch_sz 48)
   checkpoint_iterations: 10000                  # Checkpoint Iteration Frequency
-  per_gpu_batch_size: 24                        # Batch per GPU (multipled by n_gpus in accelerate)
+  per_gpu_batch_size: 12                        # Batch per GPU (multipled by n_gpus in accelerate)
   gradient_accumulations_steps: 1               # Split per GPU batch into accumulation steps
   max_grad_norm: 1.0                            # Max Grad Norm for Clipping
   reconstruction_loss_fn: l1                    # What Reconstruction Loss do you want? ("l1", "l2")

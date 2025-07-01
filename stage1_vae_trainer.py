@@ -156,32 +156,34 @@ def main():
             num_warmup_steps=train_cfg["lr_warmup_steps"] * accelerator.num_processes
         )
     if use_disc:
-        disc_steps = (train_cfg["total_training_iterations"] - train_cfg["disc_start"]) // 2
-        gen_steps = train_cfg["total_training_iterations"] - disc_steps
         disc_lr_scheduler = get_scheduler(
             train_cfg["disc_lr_scheduler"],
             optimizer=disc_optimizer,
-            num_training_steps=disc_steps * accelerator.num_processes,
+            num_training_steps=train_cfg["total_training_iterations"] * accelerator.num_processes,
             num_warmup_steps=train_cfg["disc_lr_warmup_steps"] * accelerator.num_processes,
-        )
-        lr_scheduler = get_scheduler(
-            train_cfg["lr_scheduler"],
-            optimizer=optimizer,
-            num_training_steps=gen_steps * accelerator.num_processes,
-            num_warmup_steps=train_cfg["lr_warmup_steps"] * accelerator.num_processes
         )
 
     ### Prepare Everything ###
-    model, optimizer, lr_scheduler, dataloader, eval_dataloader, = accelerator.prepare(
-        model, optimizer, lr_scheduler, dataloader, eval_dataloader
-    )
-    if use_disc:
-        discriminator, disc_optimizer, disc_lr_scheduler = accelerator.prepare(
-            discriminator, disc_optimizer, disc_lr_scheduler
-        )
+    components = [model, optimizer, lr_scheduler, dataloader, eval_dataloader]
     if use_lpips:
-        lpips_loss_fn = accelerator.prepare(lpips_loss_fn)
-        ssim_fn = accelerator.prepare(ssim_fn)
+        components += [lpips_loss_fn, ssim_fn]
+    if use_disc:
+        components += [discriminator, disc_optimizer, disc_lr_scheduler]
+
+    prepared = accelerator.prepare(*components)  # Call prepare ONCE
+    model = prepared[0]
+    optimizer = prepared[1]
+    lr_scheduler = prepared[2]
+    dataloader = prepared[3]
+    eval_dataloader = prepared[4]
+
+    if use_lpips:
+        lpips_loss_fn = prepared[5]
+        ssim_fn = prepared[6]
+    if use_disc:
+        discriminator = prepared[7]
+        disc_optimizer = prepared[8]
+        disc_lr_scheduler = prepared[9]
 
     ### Load Validation Images (If we have a folder of them) ###
     val_images = None
