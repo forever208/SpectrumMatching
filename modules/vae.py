@@ -558,14 +558,14 @@ class VQVAE(EncoderDecoder):
 
     def quantize(self, z, compute_loss=False, compute_perplexity=False):
         ### Reshape to (B*H*W x E) ###
-        z = z.permute(0,2,3,1)
+        z = z.permute(0, 2, 3, 1)  # (b, c, h, w) --> (b, h, w, c)
         z_flattened = z.reshape(-1, self.config.vq_embed_dim)
         ### Compute Distance Between Each Embedding and Codevectors ###
-        pairwise_dist = torch.cdist(z_flattened, self.embedding.weight)
+        pairwise_dist = torch.cdist(z_flattened, self.embedding.weight)  # (b*h*w, codebook_siz)
         ### For each of our input vectors find the index of the closest codevector ###
-        closest = torch.argmin(pairwise_dist, dim=-1)
+        closest = torch.argmin(pairwise_dist, dim=-1)  # (b*h*w, )
         ### Index our Embedding Matrix to grab cooresponding codevectors ###
-        quantized = self.embedding(closest).reshape(*z.shape)
+        quantized = self.embedding(closest).reshape(*z.shape)  # (b, h, w, c)
 
         ### Compute CodeBook and Commitment Loss ###
         if compute_loss:
@@ -573,21 +573,21 @@ class VQVAE(EncoderDecoder):
             commitment_loss = torch.mean((quantized.detach() - z)**2)
             loss = codebook_loss + self.config.commitment_beta * commitment_loss
 
-        ### Compute Codebook Perplexity ###
+        ### Compute How effectively the codebook is used ###
         if compute_perplexity:
             ### One Hot Encode Index ###
             one_hot_closest = torch.zeros(closest.shape[0], self.config.codebook_size, device=z.device)
             one_hot_closest[list(range(closest.shape[0])), closest] = 1
-            util_proportion = torch.mean(one_hot_closest, dim=0)
+            util_proportion = torch.mean(one_hot_closest, dim=0)  # (codebook_size, )
             ### Compute Perplexity ###
             perplexity = torch.exp(-torch.sum(util_proportion * torch.log(util_proportion + 1e-8)))
 
         ### Copy Gradients (Straight Through Estimator) ###
-        quantized = z + (quantized - z).detach()
+        quantized = z + (quantized - z).detach()  # in the backwards pass, d(quant) = d(z), i.e. copy gradient
         ### Permute Back to Original Image Shape (B,C,H,W) ###
         quantized = quantized.permute(0,3,2,1)
-
         output = {"quantized": quantized}
+
         if compute_loss:
             output["codebook_loss"] = codebook_loss
             output["commitment_loss"] = commitment_loss
