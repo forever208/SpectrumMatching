@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 from accelerate import Accelerator
 import lpips
 from safetensors.torch import load_file
+from tqdm.auto import tqdm
 
 from utils import load_val_images, save_orig_and_generated_images, count_num_params, convert_to_PIL_imgs
 from modules import VAE, LDMConfig, PatchGAN, init_weights
@@ -89,17 +90,18 @@ def main():
         shuffle=False,
     )
 
-    ### Prepare Everything ###
-    model, eval_dataloader, = accelerator.prepare(model,  eval_dataloader)
-    if use_lpips:
-        lpips_loss_fn = accelerator.prepare(lpips_loss_fn)
-        ssim_fn = accelerator.prepare(ssim_fn)
-
     ### Load Checkpoint ###
     path_to_checkpoint = os.path.join(path_to_experiment, args.eval_checkpoint, 'model.safetensors')
     accelerator.print(f"Loading from Checkpoint: {path_to_checkpoint}")
     state_dict = load_file(path_to_checkpoint)
     model.load_state_dict(state_dict)
+
+    ### Prepare Everything ###
+    model, eval_dataloader, = accelerator.prepare(model, eval_dataloader)
+    eval_iter = iter(eval_dataloader)
+    if use_lpips:
+        lpips_loss_fn = accelerator.prepare(lpips_loss_fn)
+        ssim_fn = accelerator.prepare(ssim_fn)
 
     ### Evaluation ###
     eval_org_imgs_path = os.path.join(args.eval_dir, "eval_org_imgs")
@@ -112,13 +114,20 @@ def main():
         os.makedirs(eval_recon_imgs_path, exist_ok=True)
 
     mini_batch_size = train_cfg["per_gpu_batch_size"]
+    batch_size = mini_batch_size * accelerator.num_processes
+    num_iterations = train_cfg["num_eval_images"] // batch_size + 1
     world_size = accelerator.state.num_processes
     local_rank = accelerator.state.local_process_index
 
     model.eval()
-    stop = False
-    accelerator.print(f"model loaded, staring evaluation...")
-    for j, mini_batch in enumerate(eval_dataloader):
+    accelerator.print(f"staring evaluation...")
+    for j in tqdm(range(num_iterations), disable=not accelerator.is_main_process, desc='sample2dir'):
+        try:
+            mini_batch = next(eval_iter)
+        except StopIteration:
+            eval_iter = iter(eval_dataloader)  # Restart the iterator if we reach the end
+            mini_batch = next(eval_iter)
+
         org_imgs = mini_batch["images"].to(accelerator.device)
         with torch.no_grad():
             recon_imgs = model(org_imgs)
@@ -131,13 +140,12 @@ def main():
 
         for b_id in range(mini_batch_size):  # distributed image save
             img_id = j * mini_batch_size * world_size + local_rank * mini_batch_size + b_id
+
             if img_id >= train_cfg["num_eval_images"]:
-                stop = True
                 break
+
             org_imgs[b_id].save(os.path.join(eval_org_imgs_path, f"{img_id}.jpg"))
             recon_imgs[b_id].save(os.path.join(eval_recon_imgs_path, f"{img_id}.jpg"))
-        if stop:
-            break
 
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:

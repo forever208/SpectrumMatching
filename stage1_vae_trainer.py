@@ -377,13 +377,22 @@ def main():
                     os.makedirs(eval_recon_imgs_path, exist_ok=True)
 
                 mini_batch_size = train_cfg["per_gpu_batch_size"]
+                batch_size = mini_batch_size * accelerator.num_processes
+                num_iterations = train_cfg["num_eval_images"] // batch_size + 1
                 world_size = accelerator.state.num_processes
                 local_rank = accelerator.state.local_process_index
 
                 ### load eval images and save images for evaluation ###
                 model.eval()
-                stop = False
-                for j, mini_batch in enumerate(eval_dataloader):
+                accelerator.print(f"staring evaluation using {train_cfg['num_eval_images']} images...")
+                eval_iter = iter(eval_dataloader)
+                for j in tqdm(range(num_iterations), disable=not accelerator.is_main_process, desc='sample2dir'):
+                    try:
+                        mini_batch = next(eval_iter)
+                    except StopIteration:
+                        eval_iter = iter(eval_dataloader)  # Restart the iterator if we reach the end
+                        mini_batch = next(eval_iter)
+
                     org_imgs = mini_batch["images"].to(accelerator.device)
                     with torch.no_grad():
                         recon_imgs = model(org_imgs)
@@ -396,14 +405,14 @@ def main():
 
                     for b_id in range(mini_batch_size):  # distributed image save
                         img_id = j * mini_batch_size * world_size + local_rank * mini_batch_size + b_id
+
                         if img_id >= train_cfg["num_eval_images"]:
-                            stop =  True
                             break
+
                         org_imgs[b_id].save(os.path.join(eval_org_imgs_path, f"{img_id}.jpg"))
                         recon_imgs[b_id].save(os.path.join(eval_recon_imgs_path, f"{img_id}.jpg"))
-                    if stop:
-                        break
 
+                # do visualization and metrics computation
                 accelerator.wait_for_everyone()
                 if accelerator.is_main_process:
                     accelerator.print(f'{len(os.listdir(eval_org_imgs_path))} images in {eval_org_imgs_path}')
