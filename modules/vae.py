@@ -465,38 +465,34 @@ class VAE(EncoderDecoder):
     
     def kl_loss(self, mean, logvar):
         var = torch.exp(logvar)
-        ### Add the KL Loss Across the Channel, Height, Width ###
         kl_loss = -0.5 * torch.sum(1 + logvar - mean**2 - var, dim=[1,2,3])
-        return kl_loss  
+        return kl_loss
 
-    def sample_z(self, mu, logvar):
-        ### Compute sigma from logvar ###
-        sigma = torch.exp(0.5 * logvar)
-        ### Sample Standard Gaussian Noise ###
-        noise = torch.randn_like(sigma, device=sigma.device, dtype=sigma.dtype)
-        ### Reparameterization Trick ###
-        z = mu + sigma * noise
-        
+    def sample(self, moments, scale_factor=1.0):
+        mean, logvar = torch.chunk(moments, 2, dim=1)
+        logvar = torch.clamp(logvar, -30.0, 20.0)
+        std = torch.exp(0.5 * logvar)
+        z = mean + std * torch.randn_like(mean)
+        z = scale_factor * z
         return z
-    
+
     def encode(self, x, return_stats=False, scale_factor=None):
-        ### Encode to (B x 2*L x H x W) ###
-        encoded = self.forward_enc(x)
-        ### Chunk Channel Dimension for Mean and Log Var ###
-        mu, logvar = torch.chunk(encoded, chunks=2, dim=1)
-        ### Clamp Logvar so when we exponentiate later, no numerical instability ###
-        logvar = torch.clamp(logvar, min=-30.0, max=20.0)
-        ### Sample Noise from Predicted Distribution ###
-        z = self.sample_z(mu, logvar) 
+        encoded = self.forward_enc(x)  # (b, ,2*c, h, w)
+
+        # sample from predicted distribution p(z|x)
+        mu, logvar = torch.chunk(encoded, chunks=2, dim=1)  # get mean and logvar (b, c, h, w)
+        logvar = torch.clamp(logvar, min=-30.0, max=20.0)  # Clamp Logvar for numerical stability
+        sigma = torch.exp(0.5 * logvar)  # std
+        noise = torch.randn_like(sigma, device=sigma.device, dtype=sigma.dtype)
+        z = mu + sigma * noise  # Reparameterization Trick
         
         ### Scale z with constant for unit variance ###
-        ### We have to calculate this constant ourselves after
-        ### training the VAE ###
+        ### We have to calculate this constant ourselves after training the VAE ###
         if scale_factor is None:
             if self.config.vae_scale_factor is not None:
                 scale_factor = self.config.vae_scale_factor
             else:
-                scale_factor = 1
+                scale_factor = 1.0
 
         z = z * scale_factor
         output = {"posterior": z}
@@ -508,7 +504,6 @@ class VAE(EncoderDecoder):
         return output
 
     def decode(self, z, scale_factor=None):
-        x = self.forward_dec(z)
         ### Unscale the Embeddings by the scale_factor ###
         if scale_factor is None:
             if self.config.vae_scale_factor is not None:
@@ -516,16 +511,15 @@ class VAE(EncoderDecoder):
             else:
                 scale_factor = 1.0
 
-        x = x / scale_factor
+        z = z / scale_factor
+        x = self.forward_dec(z)
+
         return x
     
     def forward(self, x):
-        ### Encode and get Statistics ###
         output = self.encode(x, return_stats=True)
-        ### Reconstruct w/ Decoder ###
         reconstruction = self.forward_dec(output["posterior"])
         output["reconstruction"] = reconstruction
-        ### Compute KL Loss ###
         kl_loss = self.kl_loss(output["mu"], output["logvar"])
         output["kl_loss"] = kl_loss
 

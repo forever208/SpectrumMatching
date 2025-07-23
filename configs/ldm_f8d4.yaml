@@ -79,6 +79,6 @@ unet:
 scaling_constants:
 
   #### Precomputed Constants ###
-  celebahq: 0.8924759
+  celeba256: 0.9010
   imagenet: 0.9515730
   conceptual_captions: 0.9091397
