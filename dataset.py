@@ -145,7 +145,7 @@ def get_dataset(dataset, path_to_data, num_channels=3, img_size=256, random_resi
                                      random_flip_p=random_flip_p, 
                                      train=train)
 
-    if dataset == "celeba256":
+    if dataset == "celeba256" or dataset == "ffhq128":
         trainset = GenericImageDataset(path_to_data=path_to_data, transform=img_transform, nested=False, return_classes=False)
         collate_fn = None
     elif dataset == "imagenet":

@@ -43,4 +43,4 @@ training_args:
   num_workers: 8                               # Number of CPU workers for DataLoading
   random_resize: False                          # Do you want to random resize in image transforms. If false, defauls to resize
   interpolation: bilinear                       # What interpolation mode do you want to use? ("nearest", "bilinear", "bicubic")
-  random_flip_p: 0.0                            # Random Horizontal Flip Probability
+  random_flip_p: 0.5                            # Random Horizontal Flip Probability

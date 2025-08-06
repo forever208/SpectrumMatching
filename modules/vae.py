@@ -258,7 +258,7 @@ class VAEEncoder(nn.Module):
                     groupnorm_groups=groupnorm_groups,
                     norm_eps=norm_eps, 
                     num_residual_blocks=self.residual_layers_per_block,
-                    add_downsample=not is_final_block, 
+                    add_downsample=not is_final_block,  # perform 2x spacial downsampling if not the last block
                     downsample_factor=downsample_factor, 
                     downsample_kernel_size=downsample_kernel_size
                 )
