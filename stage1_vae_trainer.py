@@ -99,6 +99,7 @@ def main():
 
     ### Print Out Number of Trainable Parameters ###
     accelerator.print(f"NUMBER OF VAE PARAMETERS: {count_num_params(model)}")
+    accelerator.print("Mixed precision:", accelerator.mixed_precision)
     if use_disc:
         accelerator.print(f"NUMBER OF DISC PARAMETERS: {count_num_params(discriminator)}")
 
