@@ -22,7 +22,7 @@ training_args:
   learning_rate: 0.00005                        # VAE Training Learning Rate  (batch_sz 48)
   lr_scheduler: constant_with_warmup            # LR Scheduler
   lr_warmup_steps: 2000                         # LR Warmup Steps
-  total_training_iterations: 600000             # Total Training Iterations  (batch_sz 48)
+  total_training_iterations: 1000000             # Total Training Iterations  (batch_sz 48)
   checkpoint_iterations: 10000                  # Checkpoint Iteration Frequency
   per_gpu_batch_size: 12                        # Batch per GPU (multipled by n_gpus in accelerate)
   gradient_accumulations_steps: 1               # Split per GPU batch into accumulation steps
