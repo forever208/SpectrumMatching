@@ -58,6 +58,7 @@ def split_into_blocks_torch(image: torch.Tensor, block_sz: int):
 
 def dct_2d_torch(x):
     # x: (N, B, B) or (B, B) float32 tensor
+    # x should be in the range of [0, 255]
 
     # Apply 2D DCT Type-II
     x = x.float() - 128.0  # Ensure float32 and subtract 128 (OpenCV style)
@@ -217,9 +218,13 @@ def main():
     model.eval()
     with torch.no_grad():
         for i, batch in enumerate(tqdm(dataloader, disable=not accelerator.is_local_main_process)):
-            pixel_values = batch["images"].to(accelerator.device)  # (batch, 3, H, W)
+            pixel_values = batch["images"].to(accelerator.device)  # (batch, 3, H, W), value range [-1, 1]
             model_outputs = model(pixel_values)
             reconstructions = model_outputs["reconstruction"]  # (batch, 3, H, W)
+
+            # scale to range [0, 255] before applying DCT
+            pixel_values = (pixel_values + 1.0) * 127.5
+            reconstructions = (reconstructions + 1.0) * 127.5
 
             # reconstruction spectral loss
             input_dct = split_into_blocks_torch(pixel_values, args.block_sz)  # (batch, C, N_blocks, B, B)
@@ -234,8 +239,8 @@ def main():
             coe_loss = torch.abs(recon_dct - input_dct).mean(dim=0)  # shape: (B, B)
 
             coe_losses.append(coe_loss.detach().cpu())
-            input_dcts.append(input_dct.mean(dim=0).detach())
-            recon_dcts.append(recon_dct.mean(dim=0).detach())
+            input_dcts.append(torch.abs(input_dct).mean(dim=0).detach())  # observe the magnitude of input
+            recon_dcts.append(torch.abs(recon_dct).mean(dim=0).detach())  # observe the magnitude of recon
 
         # stack local, move to device, gather all GPUs by reduce sum and count
         coe_losses = torch.stack(coe_losses, dim=0).to(accelerator.device)  # (num_mini_batches, B, B)
