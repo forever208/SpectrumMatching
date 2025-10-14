@@ -73,6 +73,7 @@ def get_scaling_bound(latent_path=None, pct=99.9):
     flat_latents = all_latents.flatten()  # (N*C*h*w)
 
     # Compute global statistics
+    std_value =  np.std(flat_latents)
     mean_value = np.mean(flat_latents)
     min_value = np.min(flat_latents)
     max_value = np.max(flat_latents)
@@ -83,18 +84,20 @@ def get_scaling_bound(latent_path=None, pct=99.9):
     print(f"Mean: {mean_value:.6f}")
     print(f"Min: {min_value:.6f}")
     print(f"Max: {max_value:.6f}")
+    print(f"Std: {std_value:.6f}")
     print(f"{pct}th Percentile: {upper_bound:.6f}")
     print(f"{100.0-pct}th Percentile: {lower_bound:.6f}")
-    print(f"scaling facor is {1 / bound}")
+    print(f"pct scaling facor is {1 / bound}")
+    print(f"std scaling facor is {1 / std_value}")
 
 
 if __name__ == "__main__":
-    extract_latent(
-        pretrained_weights='/data/clusterfs/mld/users/lanliu/mang/LDM_exps/celeba256_SDVAE_bf16_b48_f16d16_flip/SDVAE/checkpoint_570000/model.safetensors',
-        config_file='/data/scratch/LDM/configs/ldm_f16d16.yaml', batch_size=32, dataset='celeba256',
-        path_to_dataset='/data/scratch/datasets/celeba256/celeba256',
-        path_to_latents='/data/scratch/datasets/celeba256_latents/celeba256_SDVAE_f16_latents_570k'
-    )
+    # extract_latent(
+    #     pretrained_weights='/data/clusterfs/mld/users/lanliu/mang/LDM_exps/celeba256_SDVAE_bf16_b48_f8d4_flip_600k/SDVAE/checkpoint_570000/model.safetensors',
+    #     config_file='/data/scratch/LDM/configs/ldm_f8d4.yaml', batch_size=32, dataset='celeba256',
+    #     path_to_dataset='/data/scratch/datasets/celeba256/celeba256',
+    #     path_to_latents='/data/scratch/datasets/celeba256_latents/celeba256_SDVAE_f8_latents_570k'
+    # )
 
-    # get_scaling_bound(latent_path='/data/scratch/datasets/celeba256_latents/celeba256_SDVAE_f16_latents_570k.npy',
-    #                   pct=99.999)
+    get_scaling_bound(latent_path='/data/scratch/datasets/celeba256_latents/celeba256_SDVAE_f8_latents_570k.npy',
+                      pct=99.9)
