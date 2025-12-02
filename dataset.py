@@ -148,8 +148,11 @@ def get_dataset(dataset, path_to_data, num_channels=3, img_size=256, random_resi
     if dataset == "celeba256" or dataset == "ffhq128":
         trainset = GenericImageDataset(path_to_data=path_to_data, transform=img_transform, nested=False, return_classes=False)
         collate_fn = None
-    elif dataset == "imagenet":
+    elif dataset == "imagenet_train":
         trainset = GenericImageDataset(path_to_data=path_to_data, transform=img_transform, nested=True, return_classes=True)
+        collate_fn = None
+    elif dataset == "imagenet_val":
+        trainset = GenericImageDataset(path_to_data=path_to_data, transform=img_transform, nested=False, return_classes=False)
         collate_fn = None
     elif dataset == "conceptual_captions":
         trainset = conceptual_captions(path_to_data, img_transform)
