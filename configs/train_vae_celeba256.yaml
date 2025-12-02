@@ -39,8 +39,8 @@ training_args:
   optimizer_weight_decay: 0.005                 # AdamW Optimizer Weight Decay
 
   ### Dataset Config ###
-  pin_memory: False                              # Do you want to pin_memory on Dataloader?
-  num_workers: 8                               # Number of CPU workers for DataLoading
+  pin_memory: True                              # Do you want to pin_memory on Dataloader?
+  num_workers: 12                               # Number of CPU workers for DataLoading
   random_resize: False                          # Do you want to random resize in image transforms. If false, defauls to resize
   interpolation: bilinear                       # What interpolation mode do you want to use? ("nearest", "bilinear", "bicubic")
   random_flip_p: 0.5                            # Random Horizontal Flip Probability

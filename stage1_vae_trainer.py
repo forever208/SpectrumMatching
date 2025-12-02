@@ -382,10 +382,11 @@ def main():
                 batch_size = mini_batch_size * accelerator.num_processes
                 num_iterations = train_cfg["num_eval_images"] // batch_size + 1
                 world_size = accelerator.state.num_processes
-                local_rank = accelerator.state.local_process_index
+                global_rank = accelerator.process_index
 
                 ### load eval images and save images for evaluation ###
                 model.eval()
+                accelerator.print(f"using {world_size} GPUs, global batch size {batch_size} ")
                 accelerator.print(f"staring evaluation using {train_cfg['num_eval_images']} images...")
                 eval_iter = iter(eval_dataloader)
                 for j in tqdm(range(num_iterations), disable=not accelerator.is_main_process, desc='sample2dir'):
@@ -406,7 +407,7 @@ def main():
                     recon_imgs = convert_to_PIL_imgs(recon_imgs)  # a list PIL images
 
                     for b_id in range(mini_batch_size):  # distributed image save
-                        img_id = j * mini_batch_size * world_size + local_rank * mini_batch_size + b_id
+                        img_id = j * mini_batch_size * world_size + global_rank * mini_batch_size + b_id
 
                         if img_id >= train_cfg["num_eval_images"]:
                             break
