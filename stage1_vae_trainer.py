@@ -32,7 +32,7 @@ def experiment_config_parser():
     parser.add_argument("--resume_from_checkpoint",  help="name of ckpt folder to resume training from", default=None, type=str, metavar="resume_from_checkpoint")
     parser.add_argument("--training_config", help="Path to config file", required=True, type=str, metavar="training_config")
     parser.add_argument("--model_config", help="Path to model config file", required=True, type=str, metavar="model_config")
-    parser.add_argument("--dataset", help="dataset to train on", choices=("conceptual_captions", "imagenet", "coco", "celeba", "celeba256", "birds", "ffhq128"), required=True, type=str)
+    parser.add_argument("--dataset", help="dataset to train on", choices=("conceptual_captions", "imagenet", "coco", "celeba256", "ffhq128", "ffhq256"), required=True, type=str)
     parser.add_argument("--path_to_dataset", help="Root directory of dataset", required=True, type=str)
     args = parser.parse_args()
 
