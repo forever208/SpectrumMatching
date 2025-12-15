@@ -1,0 +1,334 @@
+import torch.nn.functional as F
+import torch_dct as dct
+import numpy as np
+from PIL import Image
+import torch
+import matplotlib.pyplot as plt
+from typing import Optional, Tuple, Dict, Any
+from pathlib import Path
+
+
+# ============================================================
+# 1) Unified 2D DCT for inputs roughly in [-1, 1]
+# ============================================================
+def dct_2d_torch_unified(x: torch.Tensor, center: str = "mean"):
+    """
+    2D DCT-II (ortho) for inputs in roughly [-1, 1], works for RGB or latents.
+
+    x: (..., H, W)
+    center:
+      - "mean": subtract spatial mean per sample (recommended)
+      - "none": no centering (DC can dominate)
+    returns: (..., H, W)
+    """
+    x = x.float()
+    if center == "mean":
+        x = x - x.mean(dim=(-2, -1), keepdim=True)
+    elif center == "none":
+        pass
+    else:
+        raise ValueError("center must be 'mean' or 'none'")
+
+    x = dct.dct(x, norm="ortho")                       # last dim
+    x = dct.dct(x.transpose(-2, -1), norm="ortho")     # second-last
+    return x.transpose(-2, -1)
+
+
+# ============================================================
+# 2) Gaussian blur (depthwise)
+# ============================================================
+def gaussian_kernel2d(kernel_size: int, sigma: float, device=None, dtype=None):
+    assert kernel_size % 2 == 1, "kernel_size should be odd"
+    ax = torch.arange(kernel_size, device=device, dtype=dtype) - (kernel_size // 2)
+    xx, yy = torch.meshgrid(ax, ax, indexing="ij")
+    k = torch.exp(-(xx**2 + yy**2) / (2 * sigma**2))
+    return k / k.sum()
+
+
+def gaussian_blur(x: torch.Tensor, kernel_size: int = 7, sigma: float = 1.2):
+    """
+    x: (B,C,H,W) -> blurred x: (B,C,H,W)
+    """
+    B, C, H, W = x.shape
+    k = gaussian_kernel2d(kernel_size, sigma, device=x.device, dtype=x.dtype)
+    k = k.view(1, 1, kernel_size, kernel_size).repeat(C, 1, 1, 1)  # (C,1,K,K)
+    pad = kernel_size // 2
+    return F.conv2d(x, k, padding=pad, groups=C)
+
+
+def downsample_to(x: torch.Tensor, size_hw: tuple[int, int]):
+    return F.interpolate(x, size=size_hw, mode="bicubic", align_corners=False)
+
+
+# ============================================================
+# 3) Channel-aggregated DCT power spectrum
+# ============================================================
+def channel_agg_power_dct_unified(x: torch.Tensor, center: str = "mean",
+                                  remove_dc: bool = True, eps: float = 1e-12):
+    """
+    x: (B,C,H,W), values ~ [-1,1]
+    returns: P: (B,H,W) = mean_c (DCT(x)^2)
+    """
+    B, C, H, W = x.shape
+    x_ = x.reshape(B * C, H, W)                # treat channels as batch for later 2D-DCT
+    X = dct_2d_torch_unified(x_, center=center)
+    X = X.view(B, C, H, W)
+    P = (X ** 2).mean(dim=1).clamp_min(eps)    # average over channels for each sample, (batch, H, W)
+    if remove_dc:
+        P[:, 0, 0] = 0.0
+    return P
+
+
+# ============================================================
+# 4) Fast radial band pooling using scatter_add
+# ============================================================
+def radial_bin_map(H: int, W: int, n_bins: int, device=None):
+    yy = torch.arange(H, device=device).view(H, 1).float()
+    xx = torch.arange(W, device=device).view(1, W).float()
+    rr = torch.sqrt(yy**2 + xx**2)                     # DC at (0,0)
+    rmax = rr.max().clamp_min(1.0)
+    bin_id = torch.floor(rr / rmax * n_bins).long()
+    return bin_id.clamp(0, n_bins - 1)                 # (H,W)
+
+
+def radial_band_energy(P: torch.Tensor, n_bins: int = 16, eps: float = 1e-8):
+    """
+    P: (B,H,W) -> s: (B,n_bins) mean power per radial bin
+    """
+    B, H, W = P.shape
+    bin_id = radial_bin_map(H, W, n_bins, device=P.device).view(-1)  # (H*W,) [0, 1, 2, 3...]
+    counts = torch.bincount(bin_id, minlength=n_bins).to(P.dtype).clamp_min(1.0)  # (n_bins,)
+
+    P_flat = P.view(B, -1)                                  # (B, H*W)
+    idx = bin_id.view(1, -1).expand(B, -1)                   # (B, H*W)
+
+    s_sum = torch.zeros(B, n_bins, device=P.device, dtype=P.dtype)
+    s_sum = s_sum.scatter_add(1, idx, P_flat)                # sum up the PSD in each bin
+    s_mean = s_sum / (counts.view(1, -1) + eps)
+    return s_mean
+
+
+
+# ============================================================
+# 5) Latent spectral regularizer
+# ============================================================
+def latent_spectral_reg_dct(
+    x: torch.Tensor,              # (B,3,256,256) ~ [-1,1]
+    z: torch.Tensor,              # (B,C,h,w)     ~ [-1,1] (or any range; DCT uses mean-centering)
+    blur_ks: int = 7,
+    blur_sigma: float = 1.2,
+    n_bins: int = 16,
+    loss_type: str = "l2",        # "l2" or "kl"
+    center: str = "mean",         # DCT centering mode
+    remove_dc: bool = True,
+    eps: float = 1e-8,
+    return_dist: bool = False,
+):
+    B, Cz, hz, wz = z.shape
+
+    # 1) anti-alias then downsample x to match z spatial size
+    x_blur = gaussian_blur(x, kernel_size=blur_ks, sigma=blur_sigma)
+    x_ds = downsample_to(x_blur, (hz, wz))
+
+    # 2) channel-aggregated DCT power spectra (both in [-1,1] domain)
+    Px = channel_agg_power_dct_unified(x_ds, center=center, remove_dc=remove_dc, eps=eps)  # (B, hz, wz)
+    Pz = channel_agg_power_dct_unified(z,    center=center, remove_dc=remove_dc, eps=eps)  # (B, hz, wz)
+
+    # 3) group spectrum into num_bins, sum the PSD into each bin
+    sx = radial_band_energy(Px, n_bins=n_bins, eps=eps)  # (B, n_bins)
+    sz = radial_band_energy(Pz, n_bins=n_bins, eps=eps)  # (B, n_bins)
+
+    # 4) normalize to distributions (strictly positive with eps)
+    sx = sx + eps
+    sz = sz + eps
+    sx = sx / sx.sum(dim=1, keepdim=True)
+    sz = sz / sz.sum(dim=1, keepdim=True)
+
+    if return_dist:
+        kl_loss = (sx * (torch.log(sx + eps) - torch.log(sz + eps))).sum(dim=1).mean()
+        return sx, sz, kl_loss  # sx/sz has shape (B, n_bins)
+    else:
+        if loss_type == "l2":
+            return F.mse_loss(sz, sx)
+        elif loss_type == "kl":
+            return (sx * (torch.log(sx + eps) - torch.log(sz + eps))).sum(dim=1).mean()
+        else:
+            raise ValueError("loss_type must be 'l2' or 'kl'")
+
+
+def back_prop_debug():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    x = torch.rand(2, 3, 256, 256, device=device) * 2 - 1  # Fake inputs in [-1,1]
+    # z_64 = torch.randn(2, 4, 64, 64, device=device, requires_grad=True).tanh()     # example latent in [-1,1]
+    # z_32 = torch.randn(2, 16, 32, 32, device=device, requires_grad=True).tanh()    # example latent in [-1,1]
+
+    z_64 = torch.randn(2, 4, 64, 64, device=device, requires_grad=True)  # example latent in [-1,1]
+    z_32 = torch.randn(2, 16, 32, 32, device=device, requires_grad=True)  # example latent in [-1,1]
+
+    # Suggested blur settings:
+    loss_64 = latent_spectral_reg_dct(
+        x, z_64,
+        blur_ks=7, blur_sigma=1.2, n_bins=16,
+        loss_type="l2", log_power=True, center="mean", remove_dc=True
+    )
+
+    loss_32 = latent_spectral_reg_dct(
+        x, z_32,
+        blur_ks=11, blur_sigma=2.2, n_bins=16,
+        loss_type="l2", log_power=True, center="mean", remove_dc=True
+    )
+
+    total = loss_64 + loss_32
+    print("loss(64x64x4):", float(loss_64))
+    print("loss(32x32x16):", float(loss_32))
+    print("total:", float(total))
+
+    total.backward()
+    print("backward OK")
+
+
+def load_image_as_tensor_neg1_pos1(image_path: str, device: Optional[str] = None) -> torch.Tensor:
+    """
+    Load an image from disk and return a tensor in [-1, 1] with shape (1,3,H,W).
+    """
+    img = Image.open(image_path).convert("RGB")
+    arr = np.array(img).astype(np.float32) / 255.0               # (H,W,3) in [0,1]
+    ten = torch.from_numpy(arr).permute(2, 0, 1).unsqueeze(0)    # (1,3,H,W)
+    ten = ten * 2.0 - 1.0                                        # [-1,1]
+    if device is not None:
+        ten = ten.to(device)
+    return ten
+
+
+@torch.no_grad()
+def visualize_blur_and_sx_from_path(
+    image_path: str,
+    blur_ks: int = 7,
+    blur_sigma: float = 1.2,
+    n_bins: int = 16,
+    center: str = "mean",
+    remove_dc: bool = True,
+    eps: float = 1e-8,
+    downsample_hw: Optional[Tuple[int, int]] = None,  # e.g. (64,64) to mimic latent size
+    log_power_for_sx: bool = False,                   # keep False to avoid clamp->zero issues
+    show_log_power_heatmap: bool = True,              # extra panel: show log(Px)
+    device: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Visualizes:
+      1) original image (maybe downsampled)
+      2) blurred image (maybe downsampled)
+      3) (log) power spectrum heatmap Px (from blurred image)
+      4) sx before/after normalization
+
+    Requires your previously defined functions:
+      - gaussian_blur, downsample_to
+      - channel_agg_power_dct_unified, radial_band_energy
+    """
+    x = load_image_as_tensor_neg1_pos1(image_path, device=device)  # (1,3,H,W)
+
+    # blur
+    x_blur = gaussian_blur(x, kernel_size=blur_ks, sigma=blur_sigma)
+
+    # optional downsample (to match latent spatial size)
+    if downsample_hw is not None:
+        x_vis = downsample_to(x, downsample_hw)
+        x_blur_vis = downsample_to(x_blur, downsample_hw)
+    else:
+        x_vis = x
+        x_blur_vis = x_blur
+
+    # Px on the blurred (and maybe downsampled) image
+    Px = channel_agg_power_dct_unified(x_blur_vis, center=center, remove_dc=remove_dc, eps=eps)  # (1,h,w)
+
+    # sx (optional log power for sx, usually keep False)
+    Px_for_sx = torch.log(Px + eps) if log_power_for_sx else Px
+    sx_raw = radial_band_energy(Px_for_sx, n_bins=n_bins, eps=eps)  # (1,n_bins)
+    sx_norm = sx_raw.clamp_min(0.0)
+    sx_norm = sx_norm / (sx_norm.sum(dim=1, keepdim=True) + eps)
+
+    # convert images to [0,1] for plotting
+    def to_img01(t):
+        t = t[0]  # (3,h,w)
+        t = (t + 1.0) * 0.5
+        return t.clamp(0, 1).permute(1, 2, 0).cpu()
+
+    img0 = to_img01(x_vis)
+    img1 = to_img01(x_blur_vis)
+
+    # spectrum heatmap: use log(Px) for visibility
+    Px_heat = torch.log(Px[0] + eps).detach().cpu()  # (h,w)
+
+    # plotting: 4 panels
+    fig = plt.figure(figsize=(16, 4))
+
+    ax1 = fig.add_subplot(1, 4, 1)
+    ax1.imshow(img0)
+    ax1.set_title("Original (maybe downsampled)")
+    ax1.axis("off")
+
+    ax2 = fig.add_subplot(1, 4, 2)
+    ax2.imshow(img1)
+    ax2.set_title(f"Blurred (ks={blur_ks}, sigma={blur_sigma})")
+    ax2.axis("off")
+
+    ax3 = fig.add_subplot(1, 4, 3)
+    im = ax3.imshow(Px_heat, origin="upper")
+    ax3.set_title("log(Px) heatmap (DCT power)")
+    ax3.set_xlabel("v (freq index)")
+    ax3.set_ylabel("u (freq index)")
+    plt.colorbar(im, ax=ax3, fraction=0.046, pad=0.04)
+
+    ax4 = fig.add_subplot(1, 4, 4)
+    bins = torch.arange(n_bins).cpu()
+    ax4.plot(bins, sx_raw[0].detach().cpu(), marker="o", label="sx raw")
+    ax4.plot(bins, sx_norm[0].detach().cpu(), marker="o", label="sx normalized (sum=1)")
+    ax4.set_xlabel("Radial frequency bin (low → high)")
+    ax4.set_ylabel("Band energy")
+    ax4.set_title(f"sx (n_bins={n_bins}, log_power_for_sx={log_power_for_sx})")
+    ax4.legend()
+    ax4.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.show()
+
+    return {"x": x, "x_blur": x_blur, "Px": Px, "sx_raw": sx_raw, "sx_norm": sx_norm}
+
+
+
+def read_64x64_rgb_and_dct(image_path, center="none", device="cpu"):
+    """
+    Read an image, convert to RGB 64x64, map to [-1, 1], then apply 2D DCT per channel.
+    Returns:
+        dct_coeffs: torch.Tensor of shape (3, 64, 64) on `device`, dtype float32.
+    """
+    image_path = Path(image_path)
+
+    # 1) Load and enforce RGB + 64x64
+    img = Image.open(image_path).convert("RGB")
+    if img.size != (64, 64):
+        img = img.resize((64, 64), resample=Image.BICUBIC)
+
+    # 2) To torch: (H, W, C) uint8 -> float32 in [0, 255], then (C, H, W)
+    x = torch.from_numpy(__import__("numpy").array(img))  # (64, 64, 3), uint8
+    x = x.to(device=device, dtype=torch.float32)
+    x = x / 127.5 - 1.0  #
+    x = x.permute(2, 0, 1).contiguous()  # (3, 64, 64)
+
+    # 3) Apply 2D DCT channel-wise: treat C as batch dim -> (..., H, W)
+    coeffs = dct_2d_torch_unified(x, center=center)  # (3, 64, 64)
+    print(coeffs[0, :4, :4])
+
+
+if __name__ == "__main__":
+    # back_prop_debug()
+    # read_64x64_rgb_and_dct("/home/mang/Downloads/ffhq256/ffhq256/00002.jpg", center="none", device="cpu")
+
+    out = visualize_blur_and_sx_from_path(
+        "/home/mang/Downloads/ffhq256/ffhq256/00000.jpg",
+        blur_ks=7, blur_sigma=1.2,
+        downsample_hw=(64, 64),
+        n_bins=16,
+        log_power_for_sx=False,
+        device="cuda"
+    )

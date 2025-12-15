@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .layers import ResidualBlock2D, UpSampleBlock2D, DownSampleBlock2D
 from .transformer import Attention
+from utils_DCT import latent_spectral_reg_dct
 
 
 class EncoderBlock2D(nn.Module):
@@ -517,10 +518,18 @@ class VAE(EncoderDecoder):
         return x
     
     def forward(self, x):
-        output = self.encode(x, return_stats=True)
+        output = self.encode(x, return_stats=False)
         reconstruction = self.forward_dec(output["posterior"])
         output["reconstruction"] = reconstruction
-        kl_loss = self.kl_loss(output["mu"], output["logvar"])
+
+        # kl_loss = self.kl_loss(output["mu"], output["logvar"])
+        # output["kl_loss"] = kl_loss
+
+        kl_loss = latent_spectral_reg_dct(
+            x, output["posterior"],
+            blur_ks=7, blur_sigma=1.2, n_bins=16,
+            loss_type="kl", center="none", remove_dc=False
+        )
         output["kl_loss"] = kl_loss
 
         return output

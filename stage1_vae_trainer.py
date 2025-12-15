@@ -342,7 +342,7 @@ def main():
                         if "lr" in k:
                             v = f"{v:.1e}"
                         else:
-                            v = round(v, 2)
+                            v = round(v, 4)
                         logging_string += f"|{k}: {v}"
 
                     if global_step % 100 == 0:
@@ -360,7 +360,7 @@ def main():
                         if "lr" in k:
                             v = f"{v:.1e}"
                         else:
-                            v = round(v, 2)
+                            v = round(v, 4)
                         logging_string += f"|{k}: {v}"
 
                     if global_step % 100 == 1:
