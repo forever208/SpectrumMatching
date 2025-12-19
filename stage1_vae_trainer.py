@@ -19,6 +19,7 @@ from eval_utils.utils import calculate_psnr_between_folders
 from eval_utils.fid_score import calculate_fid_given_paths
 from torchmetrics import StructuralSimilarityIndexMeasure
 import shutil
+from utils_DCT import latent_spectral_reg_dct
 
 
 ### Load Arguments ###
@@ -220,6 +221,8 @@ def main():
     eval_recon_imgs_path = os.path.join(args.eval_dir, "eval_recon_imgs")
     eval_lpips = []
     eval_ssim = []
+    eval_SpecDiff = []
+
     for key, value in train_cfg.items():
         accelerator.print(f"{key}: {value}")
 
@@ -398,10 +401,17 @@ def main():
 
                     org_imgs = mini_batch["images"].to(accelerator.device)
                     with torch.no_grad():
-                        recon_imgs = model(org_imgs)
-                        recon_imgs = recon_imgs["reconstruction"]
+                        outputs = model(org_imgs)
+                        recon_imgs = outputs["reconstruction"]
                         eval_lpips.append(lpips_loss_fn(recon_imgs, org_imgs).mean())
                         eval_ssim.append(ssim_fn(recon_imgs, org_imgs))
+
+                        # _, _, spec_diff = latent_spectral_reg_dct(
+                        #     org_imgs, outputs["posterior"],
+                        #     blur_ks=7, blur_sigma=1.2, n_bins=64,
+                        #     loss_type="kl", center="none", remove_dc=False, return_dist=True
+                        # )
+                        eval_SpecDiff.append(outputs["kl_loss"])
 
                     org_imgs = convert_to_PIL_imgs(org_imgs)  # a list PIL images
                     recon_imgs = convert_to_PIL_imgs(recon_imgs)  # a list PIL images
@@ -460,19 +470,25 @@ def main():
                     eval_ssim = torch.tensor(eval_ssim)
                     eval_ssim = eval_ssim.mean().item()
 
+                    accelerator.print(f"Evaluating SpecDiff...")
+                    eval_SpecDiff = torch.tensor(eval_SpecDiff)
+                    eval_SpecDiff = eval_SpecDiff.mean().item()
+
                     accelerator.print(f"rFID at step {global_step} is {fid}")
                     accelerator.print(f"PSNR at step {global_step} is {avg_psnr}")
                     accelerator.print(f"LPIPS at step {global_step} is {eval_lpips}")
                     accelerator.print(f"SSIM at step {global_step} is {eval_ssim}")
+                    accelerator.print(f"SpecDiff at step {global_step} is {eval_SpecDiff}")
 
                     with open(os.path.join(args.working_directory, f'eval.log'), 'a') as f:
-                        print(f'step={global_step} rFID={fid:.5f} PSNR={avg_psnr:.5f} LPIPS={eval_lpips:.5f} SSIM={eval_ssim:.5f}', file=f)
+                        print(f'step={global_step} rFID={fid:.5f} PSNR={avg_psnr:.5f} LPIPS={eval_lpips:.5f} SSIM={eval_ssim:.5f} SpecDiff={eval_SpecDiff:.5f}', file=f)
 
                     # reset
                     shutil.rmtree(eval_org_imgs_path)  # remove the image folder
                     shutil.rmtree(eval_recon_imgs_path)  # remove the image folder
                     eval_lpips = []
                     eval_ssim = []
+                    eval_SpecDiff = []
                     model.train()
 
                 torch.cuda.empty_cache()
