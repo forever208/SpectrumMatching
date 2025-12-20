@@ -517,10 +517,8 @@ class VAE(EncoderDecoder):
 
         return x
     
-    def forward(self, x):
+    def forward(self, x, downsam=1):
         output = self.encode(x, return_stats=True)
-        reconstruction = self.forward_dec(output["posterior"])
-        output["reconstruction"] = reconstruction
 
         output["kl_loss"] = self.kl_loss(output["mu"], output["logvar"])
 
@@ -529,6 +527,21 @@ class VAE(EncoderDecoder):
             blur_ks=7, blur_sigma=1.2, n_bins=16,
             loss_type="kl", center="none", remove_dc=False,
         )
+
+        # downsample of latent and x
+        if downsam == 2 or downsam == 4:
+            down_h = output["posterior"].shape[-2] // downsam
+            down_w = output["posterior"].shape[-1] // downsam
+            output["posterior"] = F.interpolate(output["posterior"], size=(down_h, down_w), mode="bicubic", align_corners=False)
+            down_H = x.shape[-2] // downsam
+            down_W = x.shape[-2] // downsam
+            output["img"] = F.interpolate(x, size=(down_H, down_W), mode="bicubic", align_corners=False)
+        elif downsam == 1:
+            output["img"] = x
+        else:
+            raise NotImplementedError
+
+        output["reconstruction"] = self.forward_dec(output["posterior"])
 
         return output
 

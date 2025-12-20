@@ -232,6 +232,7 @@ def main():
             discriminator.train()
 
         for i, batch in enumerate(dataloader):
+            downsam = random.choice([1, 2, 4])
             pixel_values = batch["images"].to(accelerator.device)
             model_toggle = (global_step % 2) == 0
             train_disc = (global_step >= train_cfg["disc_start"])
@@ -246,8 +247,9 @@ def main():
                 else:
                     generator_step = False
 
-            model_outputs = model(pixel_values)
+            model_outputs = model(pixel_values, downsam)
             reconstructions = model_outputs["reconstruction"]
+            pixel_values = model_outputs["img"]
 
             ### train the VAE ###
             if generator_step:
