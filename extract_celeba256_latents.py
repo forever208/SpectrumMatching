@@ -93,12 +93,12 @@ def get_scaling_bound(latent_path=None, pct=99.9):
 
 
 if __name__ == "__main__":
-    # extract_latent(
-    #     pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SDVAE_bf16_b48_f16d16_flip_SM_16bins_KLx1/SDVAE/checkpoint_400000/model.safetensors',
-    #     config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', batch_size=32, dataset='celeba256',
-    #     path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
-    #     path_to_latents='/leonardo_work/EUHPC_B29_014/datasets/celeba256_latents/celeba256_SM_f16_latents_16bins_noDC_KLx1_400k'
-    # )
+    extract_latent(
+        pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SM_b48_f16d16_16bins_kl/SDVAE/checkpoint_30000/model.safetensors',
+        config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', batch_size=32, dataset='celeba256',
+        path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
+        path_to_latents='/leonardo_work/EUHPC_B29_014/datasets/celeba256_latents/celeba256_SM_f16_16bins_kl_30k'
+    )
 
-    get_scaling_bound(latent_path='/leonardo_work/EUHPC_B29_014/datasets/celeba256_latents/celeba256_SM_f16_latents_16bins_noDC_KLx1_400k.npy',
+    get_scaling_bound(latent_path='/leonardo_work/EUHPC_B29_014/datasets/celeba256_latents/celeba256_SM_f16_16bins_kl_30k.npy',
                       pct=99.9)

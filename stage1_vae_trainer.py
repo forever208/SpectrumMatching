@@ -199,7 +199,7 @@ def main():
         )
 
     ### Initialize log Variables ###
-    model_log = {"loss": 0, "percept_loss": 0, "recon_loss": 0, "lpips_loss": 0, "kl_loss": 0, "disc_loss": 0, "adp_weight": 0}
+    model_log = {"loss": 0, "percept_loss": 0, "recon_loss": 0, "lpips_loss": 0, "kl_loss": 0, "sm_loss": 0, "disc_loss": 0, "adp_weight": 0}
     disc_log = {"disc_loss": 0, "logits_real": 0, "logits_fake": 0}
 
     def reset_log(log):
@@ -298,6 +298,10 @@ def main():
                     kl_loss = model_outputs["kl_loss"].mean()
                     loss = loss + kl_loss * train_cfg["kl_weight"]
 
+                    ### SM Loss ###
+                    sm_loss = model_outputs["sm_loss"].mean()
+                    loss = loss + sm_loss * 1.0
+
                     accelerator.backward(loss)
                     if accelerator.sync_gradients:
                         accelerator.clip_grad_norm_(model.parameters(), 1.0)
@@ -311,6 +315,7 @@ def main():
                         "recon_loss": reconstruction_loss,
                         "lpips_loss": lpips_loss,
                         "kl_loss": kl_loss,
+                        "sm_loss": sm_loss,
                         "disc_loss": gen_loss,
                         "adp_weight": adaptive_weight
                     }
@@ -411,7 +416,7 @@ def main():
                         #     blur_ks=7, blur_sigma=1.2, n_bins=64,
                         #     loss_type="kl", center="none", remove_dc=False, return_dist=True
                         # )
-                        eval_SpecDiff.append(outputs["kl_loss"])
+                        eval_SpecDiff.append(outputs["sm_loss"])
 
                     org_imgs = convert_to_PIL_imgs(org_imgs)  # a list PIL images
                     recon_imgs = convert_to_PIL_imgs(recon_imgs)  # a list PIL images

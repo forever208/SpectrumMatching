@@ -518,19 +518,17 @@ class VAE(EncoderDecoder):
         return x
     
     def forward(self, x):
-        output = self.encode(x, return_stats=False)
+        output = self.encode(x, return_stats=True)
         reconstruction = self.forward_dec(output["posterior"])
         output["reconstruction"] = reconstruction
 
-        # kl_loss = self.kl_loss(output["mu"], output["logvar"])
-        # output["kl_loss"] = kl_loss
+        output["kl_loss"] = self.kl_loss(output["mu"], output["logvar"])
 
-        kl_loss = latent_spectral_reg_dct(
+        output["sm_loss"] = latent_spectral_reg_dct(
             x, output["posterior"],
             blur_ks=7, blur_sigma=1.2, n_bins=16,
-            loss_type="kl", center="none", remove_dc=False
+            loss_type="kl", center="none", remove_dc=False,
         )
-        output["kl_loss"] = kl_loss
 
         return output
 
