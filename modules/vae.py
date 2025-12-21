@@ -525,7 +525,7 @@ class VAE(EncoderDecoder):
         output["sm_loss"] = latent_spectral_reg_dct(
             x, output["posterior"],
             blur_ks=7, blur_sigma=1.2, n_bins=16,
-            loss_type="kl", center="none", remove_dc=False,
+            loss_type="kl", log_power=True, center="mean", remove_dc=True,
         )
 
         # downsample of latent and x
