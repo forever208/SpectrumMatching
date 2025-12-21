@@ -118,7 +118,8 @@ def latent_spectral_reg_dct(
     blur_ks: int = 7,
     blur_sigma: float = 1.2,
     n_bins: int = 16,
-    loss_type: str = "l2",        # "l2" or "kl"
+    loss_type: str = "kl",        # "l2" or "kl"
+    log_power: bool = True,
     center: str = "mean",         # DCT centering mode
     remove_dc: bool = True,
     eps: float = 1e-8,
@@ -134,15 +135,19 @@ def latent_spectral_reg_dct(
     Px = channel_agg_power_dct_unified(x_ds, center=center, remove_dc=remove_dc, eps=eps)  # (B, hz, wz)
     Pz = channel_agg_power_dct_unified(z,    center=center, remove_dc=remove_dc, eps=eps)  # (B, hz, wz)
 
+    if log_power:
+        Px = torch.log(Px + eps + 1.0)
+        Pz = torch.log(Pz + eps + 1.0)
+
     # 3) group spectrum into num_bins, sum the PSD into each bin
     sx = radial_band_energy(Px, n_bins=n_bins, eps=eps)  # (B, n_bins)
     sz = radial_band_energy(Pz, n_bins=n_bins, eps=eps)  # (B, n_bins)
 
-    # 4) normalize to distributions (strictly positive with eps)
-    sx = sx + eps
-    sz = sz + eps
-    sx = sx / sx.sum(dim=1, keepdim=True)
-    sz = sz / sz.sum(dim=1, keepdim=True)
+    # 4) normalize to distributions (scale-invariant), each bin takes up how much proportion of PSD
+    sx = sx.clamp_min(0.0)
+    sz = sz.clamp_min(0.0)
+    sx = sx / (sx.sum(dim=1, keepdim=True) + eps)
+    sz = sz / (sz.sum(dim=1, keepdim=True) + eps)
 
     if return_dist:
         kl_loss = (sx * (torch.log(sx + eps) - torch.log(sz + eps))).sum(dim=1).mean()

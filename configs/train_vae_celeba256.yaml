@@ -28,7 +28,7 @@ training_args:
   gradient_accumulations_steps: 1               # Split per GPU batch into accumulation steps
   max_grad_norm: 1.0                            # Max Grad Norm for Clipping
   reconstruction_loss_fn: l1                    # What Reconstruction Loss do you want? ("l1", "l2")
-  kl_weight: 0.000001                           # KL Regularization Weight
+  kl_weight: 0.0                           # KL Regularization Weight, 0.000001
   num_val_random_samples: 4                     # How many random samples do you want to plot reconstructions for? (max of the set batch per gpu)
   val_img_folder_path: null                     # Folder of images you want to plot during training, if you dont want to random sample
   val_generation_freq: 10000                    # How often do you want to test generations?
