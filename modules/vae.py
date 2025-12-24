@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .layers import ResidualBlock2D, UpSampleBlock2D, DownSampleBlock2D
 from .transformer import Attention
-from utils_DCT import latent_spectral_reg_dct
+from utils_DCT import latent_spectral_reg_dct, split_into_blocks_torch, combine_blocks_torch, dct_2d_torch_unified, idct_2d_torch_unified
 
 
 class EncoderBlock2D(nn.Module):
@@ -517,7 +517,7 @@ class VAE(EncoderDecoder):
 
         return x
     
-    def forward(self, x, downsam=1):
+    def forward(self, x, high_filter=0, blk_sz=8):
         output = self.encode(x, return_stats=True)
 
         output["kl_loss"] = self.kl_loss(output["mu"], output["logvar"])
@@ -528,18 +528,38 @@ class VAE(EncoderDecoder):
             loss_type="kl", log_power=True, center="mean", remove_dc=True,
         )
 
-        # downsample of latent and x
-        if downsam == 2 or downsam == 4:
-            down_h = output["posterior"].shape[-2] // downsam
-            down_w = output["posterior"].shape[-1] // downsam
-            output["posterior"] = F.interpolate(output["posterior"], size=(down_h, down_w), mode="bicubic", align_corners=False)
-            down_H = x.shape[-2] // downsam
-            down_W = x.shape[-2] // downsam
-            output["img"] = F.interpolate(x, size=(down_H, down_W), mode="bicubic", align_corners=False)
-        elif downsam == 1:
+        if high_filter == 0:
             output["img"] = x
         else:
-            raise NotImplementedError
+            # low pass x and latents
+            z = output["posterior"]
+            _, _, H, W = x.shape
+            _, _, h, w = z.shape
+
+            x = split_into_blocks_torch(x, blk_sz)  # (B, C, NUM_blocks, b, b)
+            z = split_into_blocks_torch(z, blk_sz)  # (B, C, num_blocks, b, b)
+
+            x = dct_2d_torch_unified(x, center="none")  # (B, C, NUM_blocks, b, b)
+            z = dct_2d_torch_unified(z, center="none")  # (B, C, num_blocks, b, b)
+
+            max_sum = 2 * (blk_sz - 1)  # 14 for 8x8
+            thresh = max_sum - (high_filter - 1)  # 15 - k for 8x8
+
+            u = torch.arange(blk_sz, device=x.device).view(blk_sz, 1)
+            v = torch.arange(blk_sz, device=x.device).view(1, blk_sz)
+            hf_mask = (u + v) >= thresh  # (8,8) True => to be zeroed
+
+            x[..., hf_mask] = 0
+            z[..., hf_mask] = 0  # low-pass filter
+
+            x = idct_2d_torch_unified(x, center="none")  # (B, C, NUM_blocks, b, b)
+            z = idct_2d_torch_unified(z, center="none")  # (B, C, num_blocks, b, b)
+
+            x = combine_blocks_torch(x, H, W, blk_sz)  # (B, C, H, W)
+            z = combine_blocks_torch(z, h, w, blk_sz)  # (B, C, h, w)
+
+            output["posterior"] = z
+            output["img"] = x
 
         output["reconstruction"] = self.forward_dec(output["posterior"])
 

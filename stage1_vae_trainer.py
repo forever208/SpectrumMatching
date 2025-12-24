@@ -232,7 +232,7 @@ def main():
             discriminator.train()
 
         for i, batch in enumerate(dataloader):
-            downsam = random.choice([1, 2, 4])
+            high_filter = random.choice([0, 1, 2, 3, 4, 5, 6,])
             pixel_values = batch["images"].to(accelerator.device)
             model_toggle = (global_step % 2) == 0
             train_disc = (global_step >= train_cfg["disc_start"])
@@ -247,7 +247,7 @@ def main():
                 else:
                     generator_step = False
 
-            model_outputs = model(pixel_values, downsam)
+            model_outputs = model(pixel_values, high_filter)
             reconstructions = model_outputs["reconstruction"]
             pixel_values = model_outputs["img"]
 
@@ -302,7 +302,7 @@ def main():
 
                     ### SM Loss ###
                     sm_loss = model_outputs["sm_loss"].mean()
-                    loss = loss + sm_loss * 0.1
+                    loss = loss + sm_loss * 0.02
 
                     accelerator.backward(loss)
                     if accelerator.sync_gradients:
