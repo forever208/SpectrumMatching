@@ -596,12 +596,12 @@ if __name__ == "__main__":
     # )
 
 
-    # spectrum_loss(
-    #     path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SDVAE_b48_f16d16_downsam_kl/SDVAE/checkpoint_190000/model.safetensors',
-    #     config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
-    #     path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
-    #     bs=100, max_samples=2000
-    # )
+    spectrum_loss(
+        path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SDVAE_bf16_b48_f16_flip_400k/SDVAE/checkpoint_250000/model.safetensors',
+        config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+        path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
+        bs=100, max_samples=5000
+    )
 
     # downsample_recon_L1_loss(
     #     path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SDVAE_b48_f16d16_downsam/SDVAE/checkpoint_50000/model.safetensors',
@@ -618,10 +618,10 @@ if __name__ == "__main__":
     #     down_factor=4, batch_size=100, max_samples=5000,
     # )
 
-    lowpass_rFID(
-        path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SDVAE_b48_f16d16_downsam/SDVAE/checkpoint_50000/model.safetensors',
-        config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
-        path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
-        path_to_save_imgs='/leonardo_work/EUHPC_B29_014',
-        batch_size=100, max_samples=5000, blk_sz=8, k=4
-    )
+    # lowpass_rFID(
+    #     path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SDVAE_b48_f16d16_downsam/SDVAE/checkpoint_50000/model.safetensors',
+    #     config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+    #     path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
+    #     path_to_save_imgs='/leonardo_work/EUHPC_B29_014',
+    #     batch_size=100, max_samples=5000, blk_sz=8, k=4
+    # )

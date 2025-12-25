@@ -300,7 +300,7 @@ def main():
 
                     ### SM Loss ###
                     sm_loss = model_outputs["sm_loss"].mean()
-                    loss = loss + sm_loss * 0.1
+                    loss = loss + sm_loss * train_cfg["sm_weight"]
 
                     accelerator.backward(loss)
                     if accelerator.sync_gradients:
