@@ -261,7 +261,7 @@ def spectrum_difference(path_to_pretrained_weights=None, config_file=None, datas
             sx, sz, kl_loss = latent_spectral_reg_dct(
                 img, latent,
                 blur_ks=7, blur_sigma=1.2, n_bins=n_bins,
-                loss_type="kl", center="none", remove_dc=False, return_dist=True
+                loss_type="kl", center="mean", remove_dc=True, return_dist=True
             )
 
             sx = sx.detach().cpu()  # sx, sz expected (B,n_bins)
@@ -341,22 +341,22 @@ def spectrum_difference(path_to_pretrained_weights=None, config_file=None, datas
 
 if __name__ == "__main__":
     # visualize_latent(
-    #     path_to_pretrained_weights='/home/mang/Downloads/celeba256_SDVAE_bf16_b48_f16d16_flip_400k/SDVAE/checkpoint_330000/model.safetensors',
+    #     path_to_pretrained_weights='/home/mang/Downloads/celeba256_SDVAE_bf16_b48_f16_flip_400k/SDVAE/checkpoint_300000/model.safetensors',
     #     config_file='configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
     #     path_to_dataset='/home/mang/Downloads/celeba256/celeba256_visual',
     # )
 
-    # spectrum_difference(
-    #     path_to_pretrained_weights='/home/mang/Downloads/celeba256_SDVAE_bf16_b48_f16d16_flip_400k/SDVAE/checkpoint_330000/model.safetensors',
-    #     config_file='configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
-    #     path_to_dataset='/home/mang/Downloads/celeba256/celeba256',
-    #     bs=8, max_samples=1000, n_bins=16,
-    # )
-
-    downsample_recon(
-        path_to_pretrained_weights='/home/mang/Downloads/celeba256_SM_b48_f16d16_64bins_nolog_KLx1/SDVAE/checkpoint_130000/model.safetensors',
+    spectrum_difference(
+        path_to_pretrained_weights='/home/mang/Downloads/celeba256_SDVAE_bf16_b48_f16_flip_400k/SDVAE/checkpoint_300000/model.safetensors',
         config_file='configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
-        path_to_dataset='/home/mang/Downloads/celeba256/celeba256_visual',
-        down_factor=2, batch_size=1,
-
+        path_to_dataset='/home/mang/Downloads/celeba256/celeba256',
+        bs=8, max_samples=1000, n_bins=16,
     )
+
+    # downsample_recon(
+    #     path_to_pretrained_weights='/home/mang/Downloads/celeba256_SM_b48_f16d16_64bins_nolog_KLx1/SDVAE/checkpoint_130000/model.safetensors',
+    #     config_file='configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+    #     path_to_dataset='/home/mang/Downloads/celeba256/celeba256_visual',
+    #     down_factor=2, batch_size=1,
+    #
+    # )

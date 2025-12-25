@@ -244,15 +244,15 @@ def latent_spectral_reg_dct(
 
     # 2) channel-aggregated DCT power spectra (both in [-1,1] domain)
     Px = channel_agg_power_dct_unified(x_ds, center=center, remove_dc=remove_dc, eps=eps)  # (B, hz, wz)
-    Pz = channel_agg_power_dct_unified(z,    center=center, remove_dc=remove_dc, eps=eps)  # (B, hz, wz)
-
-    if log_power:
-        Px = torch.log(Px + eps + 1.0)
-        Pz = torch.log(Pz + eps + 1.0)
+    Pz = channel_agg_power_dct_unified(z, center=center, remove_dc=remove_dc, eps=eps)  # (B, hz, wz)
 
     # 3) group spectrum into num_bins, sum the PSD into each bin
     sx = radial_band_energy(Px, n_bins=n_bins, eps=eps)  # (B, n_bins)
     sz = radial_band_energy(Pz, n_bins=n_bins, eps=eps)  # (B, n_bins)
+
+    if log_power:
+        sx = torch.log(sx + eps + 1.0)
+        sz = torch.log(sz + eps + 1.0)
 
     # 4) normalize to distributions (scale-invariant), each bin takes up how much proportion of PSD
     sx = sx.clamp_min(0.0)
