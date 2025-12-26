@@ -11,8 +11,11 @@ from modules import LDMConfig, VAE
 from dataset import get_dataset
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
-from utils_DCT import latent_spectral_reg_dct
+from utils_DCT import latent_spectral_reg_dct, split_into_blocks_torch, combine_blocks_torch, dct_2d_torch_unified, idct_2d_torch_unified
 import torch.nn.functional as F
+from utils import convert_to_PIL_imgs
+from eval_utils.fid_score import calculate_fid_given_paths
+import shutil
 
 
 def visualize_latent(path_to_pretrained_weights=None, config_file=None,
@@ -95,12 +98,162 @@ def _to_img01(x: torch.Tensor) -> torch.Tensor:
     return x[0].permute(1, 2, 0)
 
 
-def downsample_recon(path_to_pretrained_weights=None, config_file=None,
-                     dataset=None, img_sz=None, path_to_dataset=None,
-                     down_factor: int = 2,              # 2 or 4
-                     batch_size: int = 8,
-                     max_vis: int = 10,                 # only used if batch_size==1
-                     num_workers: int = 8):
+def spectrum_difference(path_to_pretrained_weights=None, config_file=None, dataset=None,
+                        img_sz=None, path_to_dataset=None, bs=1, max_samples=1000, n_bins=16):
+
+    print("evaluating specturm dfference for:", dataset)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    ### Load VAE Config ###
+    with open(config_file, "r") as f:
+        vae_config = yaml.safe_load(f)
+        config = LDMConfig(**vae_config["vae"])
+
+    ### Load Model and weights ###
+    model = VAE(config)
+    state_dict = load_file(path_to_pretrained_weights)
+    model.load_state_dict(state_dict, strict=True)
+    model.eval()
+    model = model.to(device)
+
+    ### Load Dataset ###
+    dataset, _ = get_dataset(dataset=dataset, path_to_data=path_to_dataset, num_channels=3, img_size=img_sz,
+                             random_resize=False, random_flip_p=0.0, train=False)
+    loader = DataLoader(dataset, batch_size=bs, shuffle=True, drop_last=False,
+                        num_workers=8, pin_memory=True, persistent_workers=True)
+    total_in_dataset = len(dataset)
+    print(f"found {total_in_dataset} samples in {dataset}")
+
+    target_N = min(max_samples, total_in_dataset)
+    sx_chunks = []
+    sz_chunks = []
+    loss_sum = 0.0
+    n_collected = 0
+
+    for batch in tqdm(loader):
+        if n_collected >= target_N:
+            break
+
+        with torch.no_grad():
+            img = batch["images"].to(device)  # (batch, 3, img_h, img_w)
+            latent = model.encode(img, scale_factor=1.0)  # mean and logvar, (batch, 8, 32, 32)
+            latent = latent["posterior"]  # (batch, C, H, W)
+
+            sx, sz, kl_loss = latent_spectral_reg_dct(
+                img, latent,
+                blur_ks=7, blur_sigma=1.2, n_bins=n_bins,
+                loss_type="kl", center="none", remove_dc=False, return_dist=True
+            )
+
+            sx = sx.detach().cpu()  # sx, sz expected (B,n_bins)
+            sz = sz.detach().cpu()
+
+            B = sx.shape[0]
+            remaining = target_N - n_collected
+            take = min(B, remaining)
+            sx_chunks.append(sx[:take])
+            sz_chunks.append(sz[:take])
+
+            # kl_loss could be scalar (already mean) or (B,) per-sample
+            if torch.is_tensor(kl_loss):
+                kl_loss_t = kl_loss.detach().cpu()
+                if kl_loss_t.ndim == 0:
+                    loss_sum += float(kl_loss_t.item()) * take
+                else:
+                    loss_sum += float(kl_loss_t[:take].sum().item())
+            else:
+                loss_sum += float(kl_loss) * take  # python float
+
+            n_collected += take
+
+    sx_all = torch.cat(sx_chunks, dim=0).numpy()  # (N,n_bins)
+    sz_all = torch.cat(sz_chunks, dim=0).numpy()  # (N,n_bins)
+    mean_kl = loss_sum / n_collected
+
+    print(f"Collected N={n_collected} samples")
+    print(f"Mean KL loss over N samples: {mean_kl:.6f}")
+
+    # ============================================================
+    # Plot 1: mean ± std curves across bins
+    # ============================================================
+    bins = np.arange(n_bins)
+    sx_mean, sx_std = sx_all.mean(axis=0), sx_all.std(axis=0)
+    sz_mean, sz_std = sz_all.mean(axis=0), sz_all.std(axis=0)
+
+    plt.figure(figsize=(10, 4))
+    plt.plot(bins, sx_mean, marker="o", label="x mean")
+    plt.fill_between(bins, sx_mean - sx_std, sx_mean + sx_std, alpha=0.2)
+    plt.plot(bins, sz_mean, marker="o", label="z mean")
+    plt.fill_between(bins, sz_mean - sz_std, sz_mean + sz_std, alpha=0.2)
+    plt.xlabel("Radial frequency bin (low → high)")
+    plt.ylabel("Normalized band energy" if np.allclose(sx_all.sum(1), 1, atol=1e-3) else "Band energy")
+    plt.title(f"P(x) vs P(z) over {n_collected} samples (mean ± std)")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+def spectrum_loss(path_to_pretrained_weights=None, config_file=None, dataset=None,
+                        img_sz=None, path_to_dataset=None, bs=1, max_samples=5000):
+
+    print("evaluating specturm loss for ckpt:", path_to_pretrained_weights)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    ### Load VAE Config ###
+    with open(config_file, "r") as f:
+        vae_config = yaml.safe_load(f)
+        config = LDMConfig(**vae_config["vae"])
+
+    ### Load Model and weights ###
+    model = VAE(config)
+    state_dict = load_file(path_to_pretrained_weights)
+    model.load_state_dict(state_dict, strict=True)
+    model.eval()
+    model = model.to(device)
+
+    ### Load Dataset ###
+    dataset, _ = get_dataset(dataset=dataset, path_to_data=path_to_dataset, num_channels=3, img_size=img_sz,
+                             random_resize=False, random_flip_p=0.0, train=False)
+    loader = DataLoader(dataset, batch_size=bs, shuffle=True, drop_last=False,
+                        num_workers=8, pin_memory=True, persistent_workers=True)
+    total_in_dataset = len(dataset)
+    print(f"found {total_in_dataset} samples in {dataset}")
+
+    target_N = min(max_samples, total_in_dataset)
+    num_iterations = target_N // bs
+    SpecLoss = []
+
+    eval_iter = iter(loader)
+    for i in tqdm(range(num_iterations), desc='spectrum loss'):
+        batch = next(eval_iter)
+
+        with torch.no_grad():
+            img = batch["images"].to(device)  # (batch, 3, img_h, img_w)
+            latent = model.encode(img, scale_factor=1.0)  # mean and logvar, (batch, 8, 32, 32)
+            latent = latent["posterior"]  # (batch, C, H, W)
+
+            kl_loss = latent_spectral_reg_dct(
+            img, latent,
+            blur_ks=7, blur_sigma=1.2, n_bins=16,
+            loss_type="kl", log_power=True, center="mean", remove_dc=True,
+            )
+
+            SpecLoss.append(kl_loss)
+
+    SpecLoss = torch.tensor(SpecLoss)
+    SpecLoss = SpecLoss.mean().item()
+
+    print(f"Mean Spec loss over {num_iterations * bs} samples: {SpecLoss:.6f}")
+
+
+def downsample_recon_L1_loss(path_to_pretrained_weights=None, config_file=None,
+                             dataset=None, img_sz=None, path_to_dataset=None,
+                             down_factor: int = 2,  # 2 or 4
+                             batch_size: int = 8,
+                             max_vis: int = 10,  # only used if batch_size==1
+                             num_workers: int = 8,
+                             max_samples = 5000):
     """
     Batch-capable version:
       - encode img -> z
@@ -114,6 +267,7 @@ def downsample_recon(path_to_pretrained_weights=None, config_file=None,
     assert down_factor in (2, 4), "down_factor must be 2 or 4"
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"downsample_recon | dataset={dataset} | down_factor={down_factor} | batch_size={batch_size}")
+    print(f"loading ckpt from {path_to_pretrained_weights}")
 
     # ---------- Load VAE Config ----------
     with open(config_file, "r") as f:
@@ -139,7 +293,7 @@ def downsample_recon(path_to_pretrained_weights=None, config_file=None,
     loader = DataLoader(
         dataset_obj,
         batch_size=batch_size,
-        shuffle=False,
+        shuffle=True,
         drop_last=False,
         num_workers=num_workers,
         pin_memory=(device == "cuda"),
@@ -147,6 +301,8 @@ def downsample_recon(path_to_pretrained_weights=None, config_file=None,
     )
     total_samples = len(dataset_obj)
     print(f"found {total_samples} samples in dataset")
+    target_N = min(max_samples, total_samples)
+    num_iterations = target_N // batch_size
 
     # We'll accumulate sums weighted by batch size to get true dataset mean.
     l1_sum = 0.0
@@ -154,7 +310,10 @@ def downsample_recon(path_to_pretrained_weights=None, config_file=None,
     n_seen = 0
 
     shown = 0
-    for batch in tqdm(loader):
+    eval_iter = iter(loader)
+    for i in tqdm(range(num_iterations)):
+        batch = next(eval_iter)
+
         with torch.no_grad():
             img = batch["images"].to(device, non_blocking=True)  # (B,3,H,W)
             B, _, H, W = img.shape
@@ -210,153 +369,259 @@ def downsample_recon(path_to_pretrained_weights=None, config_file=None,
     print(f"Mean L1 over {n_seen} samples:  {mean_l1:.6f}")
     # print(f"Mean MSE over {n_seen} samples: {mean_mse:.6f}")
 
-    return {
-        "mean_l1": mean_l1,
-        "mean_mse": mean_mse,
-        "n_seen": n_seen
-    }
 
+def downsample_rFID(path_to_pretrained_weights=None, config_file=None,
+                    dataset=None, img_sz=None, path_to_dataset=None, path_to_save_imgs=None,
+                    down_factor: int = 2,  # 2 or 4
+                    batch_size: int = 8,
+                    num_workers: int = 8,
+                    max_samples = 5000):
 
-def spectrum_difference(path_to_pretrained_weights=None, config_file=None, dataset=None,
-                        img_sz=None, path_to_dataset=None, bs=1, max_samples=1000, n_bins=16):
-
-    print("evaluating specturm dfference for:", dataset)
+    assert down_factor in (2, 4), "down_factor must be 2 or 4"
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"downsample_recon | dataset={dataset} | down_factor={down_factor} | batch_size={batch_size}")
+    print(f"loading ckpt from {path_to_pretrained_weights}")
 
-    ### Load VAE Config ###
+    # ---------- Load VAE Config ----------
     with open(config_file, "r") as f:
         vae_config = yaml.safe_load(f)
         config = LDMConfig(**vae_config["vae"])
 
-    ### Load Model and weights ###
+    # ---------- Load Model ----------
     model = VAE(config)
     state_dict = load_file(path_to_pretrained_weights)
     model.load_state_dict(state_dict, strict=True)
-    model.eval()
-    model = model.to(device)
+    model.eval().to(device)
 
-    ### Load Dataset ###
-    dataset, _ = get_dataset(dataset=dataset, path_to_data=path_to_dataset, num_channels=3, img_size=img_sz,
-                             random_resize=False, random_flip_p=0.0, train=False)
-    loader = DataLoader(dataset, batch_size=bs, shuffle=True, drop_last=False,
-                        num_workers=8, pin_memory=True, persistent_workers=True)
-    total_in_dataset = len(dataset)
-    print(f"found {total_in_dataset} samples in {dataset}")
+    # ---------- Load Dataset ----------
+    dataset_obj, _ = get_dataset(
+        dataset=dataset,
+        path_to_data=path_to_dataset,
+        num_channels=3,
+        img_size=img_sz,
+        random_resize=False,
+        random_flip_p=0.0,
+        train=False
+    )
+    loader = DataLoader(
+        dataset_obj,
+        batch_size=batch_size,
+        shuffle=True,
+        drop_last=False,
+        num_workers=num_workers,
+        pin_memory=(device == "cuda"),
+        persistent_workers=(num_workers > 0),
+    )
+    total_samples = len(dataset_obj)
+    print(f"found {total_samples} samples in dataset")
+    target_N = min(max_samples, total_samples)
+    num_iterations = target_N // batch_size
 
-    target_N = min(max_samples, total_in_dataset)
-    sx_chunks = []
-    sz_chunks = []
-    loss_sum = 0.0
-    n_collected = 0
+    # We'll accumulate sums weighted by batch size to get true dataset mean.
+    eval_org_imgs_path = os.path.join(path_to_save_imgs, "eval_down_org_imgs")
+    eval_recon_imgs_path = os.path.join(path_to_save_imgs, "eval_down_recon_imgs")
+    os.makedirs(eval_org_imgs_path, exist_ok=True)
+    os.makedirs(eval_recon_imgs_path, exist_ok=True)
 
-    for batch in tqdm(loader):
-        if n_collected >= target_N:
-            break
+    eval_iter = iter(loader)
+    for n in tqdm(range(num_iterations)):
+        batch = next(eval_iter)
 
         with torch.no_grad():
-            img = batch["images"].to(device)  # (batch, 3, img_h, img_w)
-            latent = model.encode(img, scale_factor=1.0)  # mean and logvar, (batch, 8, 32, 32)
-            latent = latent["posterior"]  # (batch, C, H, W)
+            img = batch["images"].to(device, non_blocking=True)  # (B,3,H,W)
+            _, _, H, W = img.shape
 
-            sx, sz, kl_loss = latent_spectral_reg_dct(
-                img, latent,
-                blur_ks=7, blur_sigma=1.2, n_bins=n_bins,
-                loss_type="kl", center="mean", remove_dc=True, return_dist=True
-            )
+            # ---- Encode ----
+            outputs = model.encode(img)
+            z = outputs["posterior"]  # (B,C,zh,zw) tensor expected
 
-            sx = sx.detach().cpu()  # sx, sz expected (B,n_bins)
-            sz = sz.detach().cpu()
+            # ---- Downsample img ----
+            down_H, down_W = H // down_factor, W // down_factor
+            down_img = F.interpolate(img, size=(down_H, down_W), mode="bicubic", align_corners=False)  # (B, C, down_H, down_W)
 
-            B = sx.shape[0]
-            remaining = target_N - n_collected
-            take = min(B, remaining)
-            sx_chunks.append(sx[:take])
-            sz_chunks.append(sz[:take])
+            # ---- Downsample z ----
+            zh, zw = z.shape[-2:]
+            down_zh, down_zw = max(1, zh // down_factor), max(1, zw // down_factor)
+            down_z = F.interpolate(z, size=(down_zh, down_zw), mode="bicubic", align_corners=False)
 
-            # kl_loss could be scalar (already mean) or (B,) per-sample
-            if torch.is_tensor(kl_loss):
-                kl_loss_t = kl_loss.detach().cpu()
-                if kl_loss_t.ndim == 0:
-                    loss_sum += float(kl_loss_t.item()) * take
-                else:
-                    loss_sum += float(kl_loss_t[:take].sum().item())
-            else:
-                loss_sum += float(kl_loss) * take  # python float
+            # ---- Decode ----
+            recon_down_img = model.decode(down_z)  # (B, C, down_H, down_W)
 
-            n_collected += take
+            down_img = convert_to_PIL_imgs(down_img)  # a list PIL images
+            recon_down_img = convert_to_PIL_imgs(recon_down_img)  # a list PIL images
 
-    sx_all = torch.cat(sx_chunks, dim=0).numpy()  # (N,n_bins)
-    sz_all = torch.cat(sz_chunks, dim=0).numpy()  # (N,n_bins)
-    mean_kl = loss_sum / n_collected
+            for b_id in range(batch_size):  # distributed image save
+                img_id = batch_size * n + b_id
 
-    print(f"Collected N={n_collected} samples")
-    print(f"Mean KL loss over N samples: {mean_kl:.6f}")
+                if img_id >= target_N:
+                    break
 
-    # ============================================================
-    # Plot 1: mean ± std curves across bins
-    # ============================================================
-    bins = np.arange(n_bins)
-    sx_mean, sx_std = sx_all.mean(axis=0), sx_all.std(axis=0)
-    sz_mean, sz_std = sz_all.mean(axis=0), sz_all.std(axis=0)
+                down_img[b_id].save(os.path.join(eval_org_imgs_path, f"{img_id}.jpg"))
+                recon_down_img[b_id].save(os.path.join(eval_recon_imgs_path, f"{img_id}.jpg"))
 
-    plt.figure(figsize=(10, 4))
-    plt.plot(bins, sx_mean, marker="o", label="x mean")
-    plt.fill_between(bins, sx_mean - sx_std, sx_mean + sx_std, alpha=0.2)
-    plt.plot(bins, sz_mean, marker="o", label="z mean")
-    plt.fill_between(bins, sz_mean - sz_std, sz_mean + sz_std, alpha=0.2)
-    plt.xlabel("Radial frequency bin (low → high)")
-    plt.ylabel("Normalized band energy" if np.allclose(sx_all.sum(1), 1, atol=1e-3) else "Band energy")
-    plt.title(f"P(x) vs P(z) over {n_collected} samples (mean ± std)")
-    plt.grid(True, alpha=0.3)
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
+    print(f'{len(os.listdir(eval_org_imgs_path))} images in {eval_org_imgs_path}')
+    print(f'{len(os.listdir(eval_recon_imgs_path))} images in {eval_recon_imgs_path}')
 
-    # # ============================================================
-    # # Plot 2: per-bin distribution (boxplots)
-    # # ============================================================
-    # # side-by-side boxplots for each bin: sx then sz
-    # data = []
-    # positions = []
-    # labels = []
-    # for k in range(n_bins):
-    #     data.append(sx_all[:, k])
-    #     positions.append(2 * k + 1)
-    #     labels.append(f"{k}\n(sx)")
-    #     data.append(sz_all[:, k])
-    #     positions.append(2 * k + 2)
-    #     labels.append(f"{k}\n(sz)")
-    #
-    # plt.figure(figsize=(max(12, n_bins * 0.8), 5))
-    # plt.boxplot(data, positions=positions, showfliers=False)
-    # plt.xticks(positions, labels, rotation=0)
-    # plt.xlabel("Bin index (each bin has sx and sz)")
-    # plt.ylabel("Band energy value")
-    # plt.title(f"Per-bin distribution of sx and sz over {n_collected} samples")
-    # plt.grid(True, axis="y", alpha=0.3)
-    # plt.tight_layout()
-    # plt.show()
+    fid = calculate_fid_given_paths([eval_org_imgs_path, eval_recon_imgs_path], device=device)
+    print(f"downsample rFID is {fid}")
+    shutil.rmtree(eval_org_imgs_path)  # remove the image folder
+    shutil.rmtree(eval_recon_imgs_path)  # remove the image folder
 
+
+def lowpass_rFID(path_to_pretrained_weights=None, config_file=None,
+                 dataset=None, img_sz=None, path_to_dataset=None, path_to_save_imgs=None,
+                 batch_size: int = 8,
+                 num_workers: int = 8,
+                 max_samples = 5000,
+                 k = 4,
+                 blk_sz = 8):
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"lowpass_recon | dataset={dataset} | remove_high_freq_corner={k} | batch_size={batch_size}")
+    print(f"loading ckpt from {path_to_pretrained_weights}")
+
+    # ---------- Load VAE Config ----------
+    with open(config_file, "r") as f:
+        vae_config = yaml.safe_load(f)
+        config = LDMConfig(**vae_config["vae"])
+
+    # ---------- Load Model ----------
+    model = VAE(config)
+    state_dict = load_file(path_to_pretrained_weights)
+    model.load_state_dict(state_dict, strict=True)
+    model.eval().to(device)
+
+    # ---------- Load Dataset ----------
+    dataset_obj, _ = get_dataset(
+        dataset=dataset,
+        path_to_data=path_to_dataset,
+        num_channels=3,
+        img_size=img_sz,
+        random_resize=False,
+        random_flip_p=0.0,
+        train=False
+    )
+    loader = DataLoader(
+        dataset_obj,
+        batch_size=batch_size,
+        shuffle=True,
+        drop_last=False,
+        num_workers=num_workers,
+        pin_memory=(device == "cuda"),
+        persistent_workers=(num_workers > 0),
+    )
+    total_samples = len(dataset_obj)
+    print(f"found {total_samples} samples in dataset")
+    target_N = min(max_samples, total_samples)
+    num_iterations = target_N // batch_size
+
+    # We'll accumulate sums weighted by batch size to get true dataset mean.
+    eval_org_imgs_path = os.path.join(path_to_save_imgs, "eval_lowpass_org_imgs")
+    eval_recon_imgs_path = os.path.join(path_to_save_imgs, "eval_lowpass_recon_imgs")
+    os.makedirs(eval_org_imgs_path, exist_ok=True)
+    os.makedirs(eval_recon_imgs_path, exist_ok=True)
+
+    eval_iter = iter(loader)
+    for n in tqdm(range(num_iterations)):
+        batch = next(eval_iter)
+
+        with torch.no_grad():
+            img = batch["images"].to(device, non_blocking=True)  # (B,3,H,W)
+            _, _, H, W = img.shape
+
+            # ---- Encode ----
+            outputs = model.encode(img)
+            z = outputs["posterior"]  # (B,C,h,w) tensor expected
+            _, _, h, w = z.shape
+
+            # ---- low_pass z and img ----
+            z = split_into_blocks_torch(z, blk_sz)  # (B, C, num_blocks, b, b)
+            img = split_into_blocks_torch(img, blk_sz)  # (B, C, NUM_blocks, b, b)
+
+            z = dct_2d_torch_unified(z, center="none")  # (B, C, num_blocks, b, b)
+            img = dct_2d_torch_unified(img, center="none")  # (B, C, NUM_blocks, b, b)
+
+            max_sum = 2 * (blk_sz - 1)  # 14 for 8x8
+            thresh = max_sum - (k - 1)  # 15 - k for 8x8
+
+            u = torch.arange(blk_sz, device=z.device).view(blk_sz, 1)
+            v = torch.arange(blk_sz, device=z.device).view(1, blk_sz)
+            hf_mask = (u + v) >= thresh  # (8,8) True => to be zeroed
+
+            z[..., hf_mask] = 0  # low-pass filter
+            img[..., hf_mask] = 0
+
+            z = idct_2d_torch_unified(z, center="none")  # (B, C, num_blocks, b, b)
+            img = idct_2d_torch_unified(img, center="none") # (B, C, NUM_blocks, b, b)
+
+            z = combine_blocks_torch(z, h, w, blk_sz)  # (B, C, h, w)
+            img = combine_blocks_torch(img, H, W, blk_sz)  # (B, C, H, W)
+
+            # ---- Decode ----
+            recon_lowpass_img = model.decode(z)  # (B, C, H, W)
+
+            lowpass_img = convert_to_PIL_imgs(img)  # a list PIL images
+            recon_lowpass_img = convert_to_PIL_imgs(recon_lowpass_img)  # a list PIL images
+
+            for b_id in range(batch_size):  # distributed image save
+                img_id = batch_size * n + b_id
+
+                if img_id >= target_N:
+                    break
+
+                lowpass_img[b_id].save(os.path.join(eval_org_imgs_path, f"{img_id}.jpg"))
+                recon_lowpass_img[b_id].save(os.path.join(eval_recon_imgs_path, f"{img_id}.jpg"))
+
+    print(f'{len(os.listdir(eval_org_imgs_path))} images in {eval_org_imgs_path}')
+    print(f'{len(os.listdir(eval_recon_imgs_path))} images in {eval_recon_imgs_path}')
+
+    fid = calculate_fid_given_paths([eval_org_imgs_path, eval_recon_imgs_path], device=device)
+    print(f"downsample rFID is {fid}")
+    shutil.rmtree(eval_org_imgs_path)  # remove the image folder
+    shutil.rmtree(eval_recon_imgs_path)  # remove the image folder
 
 
 if __name__ == "__main__":
     # visualize_latent(
-    #     path_to_pretrained_weights='/home/mang/Downloads/celeba256_SDVAE_bf16_b48_f16_flip_400k/SDVAE/checkpoint_300000/model.safetensors',
+    #     path_to_pretrained_weights='/home/mang/Downloads/celeba256_SDVAE_bf16_b48_f16d16_flip_400k/SDVAE/checkpoint_330000/model.safetensors',
     #     config_file='configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
     #     path_to_dataset='/home/mang/Downloads/celeba256/celeba256_visual',
     # )
 
-    spectrum_difference(
-        path_to_pretrained_weights='/home/mang/Downloads/celeba256_SDVAE_bf16_b48_f16_flip_400k/SDVAE/checkpoint_300000/model.safetensors',
-        config_file='configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
-        path_to_dataset='/home/mang/Downloads/celeba256/celeba256',
-        bs=8, max_samples=1000, n_bins=16,
+    # spectrum_difference(
+    #     path_to_pretrained_weights='/home/mang/Downloads/celeba256_SDVAE_bf16_b48_f16d16_flip_400k/SDVAE/checkpoint_330000/model.safetensors',
+    #     config_file='configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+    #     path_to_dataset='/home/mang/Downloads/celeba256/celeba256',
+    #     bs=8, max_samples=1000, n_bins=16,
+    # )
+
+
+    spectrum_loss(
+        path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SDVAE_bf16_b48_f16_flip_400k/SDVAE/checkpoint_250000/model.safetensors',
+        config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+        path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
+        bs=100, max_samples=5000
     )
 
-    # downsample_recon(
-    #     path_to_pretrained_weights='/home/mang/Downloads/celeba256_SM_b48_f16d16_64bins_nolog_KLx1/SDVAE/checkpoint_130000/model.safetensors',
-    #     config_file='configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
-    #     path_to_dataset='/home/mang/Downloads/celeba256/celeba256_visual',
-    #     down_factor=2, batch_size=1,
-    #
+    # downsample_recon_L1_loss(
+    #     path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SDVAE_b48_f16d16_downsam/SDVAE/checkpoint_50000/model.safetensors',
+    #     config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+    #     path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
+    #     down_factor=4, batch_size=100, max_samples=5000,
+    # )
+
+    # downsample_rFID(
+    #     path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SDVAE_b48_f16d16_downsam/SDVAE/checkpoint_440000/model.safetensors',
+    #     config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+    #     path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
+    #     path_to_save_imgs='/leonardo_work/EUHPC_B29_014',
+    #     down_factor=4, batch_size=100, max_samples=5000,
+    # )
+
+    # lowpass_rFID(
+    #     path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SDVAE_b48_f16d16_downsam/SDVAE/checkpoint_50000/model.safetensors',
+    #     config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+    #     path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
+    #     path_to_save_imgs='/leonardo_work/EUHPC_B29_014',
+    #     batch_size=100, max_samples=5000, blk_sz=8, k=4
     # )
