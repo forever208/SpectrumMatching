@@ -112,6 +112,7 @@ def spectrum_difference(path_to_pretrained_weights=None, config_file=None, datas
     ### Load Model and weights ###
     model = VAE(config)
     state_dict = load_file(path_to_pretrained_weights)
+    print(f"loading ckpt from {path_to_pretrained_weights}")
     model.load_state_dict(state_dict, strict=True)
     model.eval()
     model = model.to(device)
@@ -142,7 +143,7 @@ def spectrum_difference(path_to_pretrained_weights=None, config_file=None, datas
             sx, sz, kl_loss = latent_spectral_reg_dct(
                 img, latent,
                 blur_ks=7, blur_sigma=1.2, n_bins=n_bins,
-                loss_type="kl", center="none", remove_dc=False, return_dist=True
+                loss_type="kl", center="mean", remove_dc=True, return_dist=True
             )
 
             sx = sx.detach().cpu()  # sx, sz expected (B,n_bins)
@@ -180,14 +181,49 @@ def spectrum_difference(path_to_pretrained_weights=None, config_file=None, datas
     sx_mean, sx_std = sx_all.mean(axis=0), sx_all.std(axis=0)
     sz_mean, sz_std = sz_all.mean(axis=0), sz_all.std(axis=0)
 
+    # print(f"diff of low: {np.abs((sx_all[:, 0] - sz_all[:, 0])).mean()}")
+    # print(f"diff of high: {np.abs((sx_all[:, -1] - sz_all[:, -1])).mean()}")
+
+    print(f'px: {list(np.round(sx_mean, 4))}')
+    print(f'px: {list(np.round(sz_mean, 4))}')
+
+    # plt.figure(figsize=(10, 4))
+    # plt.plot(bins, sx_mean, marker="o", label="x mean")
+    # plt.fill_between(bins, sx_mean - sx_std, sx_mean + sx_std, alpha=0.2)
+    # plt.plot(bins, sz_mean, marker="o", label="z mean")
+    # plt.fill_between(bins, sz_mean - sz_std, sz_mean + sz_std, alpha=0.2)
+    # plt.xlabel("Radial frequency bin (low → high)")
+    # plt.ylabel("Normalized band energy" if np.allclose(sx_all.sum(1), 1, atol=1e-3) else "Band energy")
+    # plt.title(f"P(x) vs P(z) over {n_collected} samples (mean ± std)")
+    # plt.grid(True, alpha=0.3)
+    # plt.legend()
+    # plt.tight_layout()
+    # plt.show()
+
+
+def visualize_PSD(px, pz, n_bins=16):
+    px = [0.2404, 0.3026, 0.1509, 0.1053, 0.0536, 0.04, 0.0246, 0.018, 0.0137, 0.0117, 0.0096, 0.0077, 0.0068, 0.0056, 0.0051, 0.0045]
+
+    # SDVAE
+    pz_200k = [0.1162, 0.1412, 0.0890, 0.0758, 0.0629, 0.0575, 0.0550, 0.0507, 0.0488, 0.0483, 0.0463, 0.0443, 0.0425, 0.0412, 0.0404, 0.0400]
+    pz_250k = [0.1166, 0.1410, 0.0892, 0.0758, 0.0628, 0.0571, 0.0548, 0.0504, 0.0485, 0.0481, 0.0461, 0.0442, 0.0427, 0.0416, 0.0408, 0.0402]
+    pz_300k = [0.1156, 0.1394, 0.0883, 0.0754, 0.0623, 0.0571, 0.0545, 0.0505, 0.0488, 0.0483, 0.0465, 0.0445, 0.0433, 0.0422, 0.0417, 0.0413]
+    pz_330k = [0.1146, 0.1386, 0.0881, 0.0754, 0.0623, 0.0572, 0.0546, 0.0506, 0.0490, 0.0484, 0.0467, 0.0447, 0.0436, 0.0425, 0.0420, 0.0416]
+    pz_380k = [0.1115, 0.1336, 0.0861, 0.0744, 0.0623, 0.0575, 0.0554, 0.0516, 0.0500, 0.0495, 0.0478, 0.0458, 0.0448, 0.0438, 0.0432, 0.0427]
+
+    # dowensam
+    pz_250k = [0.1411, 0.1471, 0.1202, 0.1006, 0.0826, 0.0715, 0.0644, 0.0506, 0.0442, 0.0392, 0.0278, 0.0474, 0.0167, 0.0155, 0.0150, 0.0162]
+    pz_300k = [0.1390, 0.1448, 0.1184, 0.0994, 0.0820, 0.0711, 0.0644, 0.0510, 0.0451, 0.0402, 0.0288, 0.0489, 0.0176, 0.0163, 0.0159, 0.0170]
+    pz_350k = [0.1375, 0.1430, 0.1169, 0.0986, 0.0818, 0.0713, 0.0650, 0.0518, 0.0458, 0.0409, 0.0294, 0.0495, 0.0180, 0.0168, 0.0163, 0.0174]
+    pz_380k = [0.1378, 0.1433, 0.1173, 0.0988, 0.0816, 0.0708, 0.0642, 0.0510, 0.0453, 0.0407, 0.0293, 0.0511, 0.0181, 0.0168, 0.0164, 0.0176]
+    pz_450k = [0.1349, 0.1404, 0.1153, 0.0977, 0.0814, 0.0711, 0.0648, 0.0520, 0.0463, 0.0418, 0.0304, 0.0521, 0.0189, 0.0176, 0.0171, 0.0184]
+
+    bins = np.arange(n_bins)
+
     plt.figure(figsize=(10, 4))
-    plt.plot(bins, sx_mean, marker="o", label="x mean")
-    plt.fill_between(bins, sx_mean - sx_std, sx_mean + sx_std, alpha=0.2)
-    plt.plot(bins, sz_mean, marker="o", label="z mean")
-    plt.fill_between(bins, sz_mean - sz_std, sz_mean + sz_std, alpha=0.2)
+    plt.plot(bins, px, marker="o", label="x mean")
+    plt.plot(bins, pz, marker="o", label="z mean")
     plt.xlabel("Radial frequency bin (low → high)")
-    plt.ylabel("Normalized band energy" if np.allclose(sx_all.sum(1), 1, atol=1e-3) else "Band energy")
-    plt.title(f"P(x) vs P(z) over {n_collected} samples (mean ± std)")
     plt.grid(True, alpha=0.3)
     plt.legend()
     plt.tight_layout()
@@ -588,20 +624,20 @@ if __name__ == "__main__":
     #     path_to_dataset='/home/mang/Downloads/celeba256/celeba256_visual',
     # )
 
+
     # spectrum_difference(
-    #     path_to_pretrained_weights='/home/mang/Downloads/celeba256_SDVAE_bf16_b48_f16d16_flip_400k/SDVAE/checkpoint_330000/model.safetensors',
-    #     config_file='configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
-    #     path_to_dataset='/home/mang/Downloads/celeba256/celeba256',
-    #     bs=8, max_samples=1000, n_bins=16,
+    #     path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SDVAE_bf16_b48_f16_flip_400k/SDVAE/checkpoint_300000/model.safetensors',
+    #     config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+    #     path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
+    #     bs=8, max_samples=30000, n_bins=16,
     # )
 
-
-    spectrum_loss(
-        path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SDVAE_bf16_b48_f16_flip_400k/SDVAE/checkpoint_250000/model.safetensors',
-        config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
-        path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
-        bs=100, max_samples=5000
-    )
+    # spectrum_loss(
+    #     path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SDVAE_bf16_b48_f16_flip_400k/SDVAE/checkpoint_250000/model.safetensors',
+    #     config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+    #     path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
+    #     bs=100, max_samples=5000
+    # )
 
     # downsample_recon_L1_loss(
     #     path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SDVAE_b48_f16d16_downsam/SDVAE/checkpoint_50000/model.safetensors',
@@ -618,10 +654,35 @@ if __name__ == "__main__":
     #     down_factor=4, batch_size=100, max_samples=5000,
     # )
 
-    # lowpass_rFID(
-    #     path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SDVAE_b48_f16d16_downsam/SDVAE/checkpoint_50000/model.safetensors',
-    #     config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
-    #     path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
-    #     path_to_save_imgs='/leonardo_work/EUHPC_B29_014',
-    #     batch_size=100, max_samples=5000, blk_sz=8, k=4
-    # )
+    for i in range(0, 5):
+        lowpass_rFID(
+            path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SM_b48_f16_16bins_log000_decodeSM_d16/SDVAE/checkpoint_200000/model.safetensors',
+            config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+            path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
+            path_to_save_imgs='/leonardo_work/EUHPC_B29_014',
+            batch_size=100, max_samples=10000, blk_sz=4, k=i
+        )
+
+        lowpass_rFID(
+            path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SM_b48_f16_16bins_log000_decodeSM_d16/SDVAE/checkpoint_300000/model.safetensors',
+            config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+            path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
+            path_to_save_imgs='/leonardo_work/EUHPC_B29_014',
+            batch_size=100, max_samples=10000, blk_sz=4, k=i
+        )
+
+        lowpass_rFID(
+            path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SM_b48_f16_16bins_log000_decodeSM_d16/SDVAE/checkpoint_350000/model.safetensors',
+            config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+            path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
+            path_to_save_imgs='/leonardo_work/EUHPC_B29_014',
+            batch_size=100, max_samples=10000, blk_sz=4, k=i
+        )
+
+        lowpass_rFID(
+            path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SM_b48_f16_16bins_log000_decodeSM_d16/SDVAE/checkpoint_390000/model.safetensors',
+            config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+            path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
+            path_to_save_imgs='/leonardo_work/EUHPC_B29_014',
+            batch_size=100, max_samples=10000, blk_sz=4, k=i
+        )

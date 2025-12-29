@@ -19,7 +19,7 @@ from eval_utils.utils import calculate_psnr_between_folders
 from eval_utils.fid_score import calculate_fid_given_paths
 from torchmetrics import StructuralSimilarityIndexMeasure
 import shutil
-from utils_DCT import latent_spectral_reg_dct
+from utils_DCT import latent_spectral_reg_dct, split_into_blocks_torch, combine_blocks_torch, dct_2d_torch_unified, idct_2d_torch_unified
 
 
 ### Load Arguments ###
@@ -232,7 +232,7 @@ def main():
             discriminator.train()
 
         for i, batch in enumerate(dataloader):
-            high_filter = random.choice([0, 1, 2, 3, 4, 5, 6,])
+            high_filter = random.choice([0, 4, 5, 6,])
             pixel_values = batch["images"].to(accelerator.device)
             model_toggle = (global_step % 2) == 0
             train_disc = (global_step >= train_cfg["disc_start"])
@@ -247,7 +247,7 @@ def main():
                 else:
                     generator_step = False
 
-            model_outputs = model(pixel_values, high_filter)
+            model_outputs = model(pixel_values, high_filter, train_cfg["blk_sz"])
             reconstructions = model_outputs["reconstruction"]
             pixel_values = model_outputs["img"]
 
@@ -412,12 +412,6 @@ def main():
                         recon_imgs = outputs["reconstruction"]
                         eval_lpips.append(lpips_loss_fn(recon_imgs, org_imgs).mean())
                         eval_ssim.append(ssim_fn(recon_imgs, org_imgs))
-
-                        # _, _, spec_diff = latent_spectral_reg_dct(
-                        #     org_imgs, outputs["posterior"],
-                        #     blur_ks=7, blur_sigma=1.2, n_bins=64,
-                        #     loss_type="kl", center="none", remove_dc=False, return_dist=True
-                        # )
                         eval_SpecDiff.append(outputs["sm_loss"])
 
                     org_imgs = convert_to_PIL_imgs(org_imgs)  # a list PIL images
@@ -425,10 +419,8 @@ def main():
 
                     for b_id in range(mini_batch_size):  # distributed image save
                         img_id = j * mini_batch_size * world_size + global_rank * mini_batch_size + b_id
-
                         if img_id >= train_cfg["num_eval_images"]:
                             break
-
                         org_imgs[b_id].save(os.path.join(eval_org_imgs_path, f"{img_id}.jpg"))
                         recon_imgs[b_id].save(os.path.join(eval_recon_imgs_path, f"{img_id}.jpg"))
 
@@ -490,16 +482,71 @@ def main():
                     with open(os.path.join(args.working_directory, f'eval.log'), 'a') as f:
                         print(f'step={global_step} rFID={fid:.5f} PSNR={avg_psnr:.5f} LPIPS={eval_lpips:.5f} SSIM={eval_ssim:.5f} SpecDiff={eval_SpecDiff:.5f}', file=f)
 
-                    # reset
                     shutil.rmtree(eval_org_imgs_path)  # remove the image folder
                     shutil.rmtree(eval_recon_imgs_path)  # remove the image folder
                     eval_lpips = []
                     eval_ssim = []
                     eval_SpecDiff = []
-                    model.train()
+                    model.eval()
 
                 torch.cuda.empty_cache()
                 accelerator.wait_for_everyone()
+
+                # evaluate low-pass FID
+                num_imgs = 10000
+                batch_size = mini_batch_size * accelerator.num_processes
+                num_iterations = num_imgs // batch_size + 1  # FID-10k
+                lpFID = []
+
+                with torch.no_grad():
+                    for k in range(0, 5):
+                        if accelerator.is_main_process:
+                            os.makedirs(eval_org_imgs_path, exist_ok=True)
+                            os.makedirs(eval_recon_imgs_path, exist_ok=True)
+
+                        for j in tqdm(range(num_iterations), disable=not accelerator.is_main_process, desc='sample2dir'):
+                            try:
+                                mini_batch = next(eval_iter)
+                            except StopIteration:
+                                eval_iter = iter(eval_dataloader)  # Restart the iterator if we reach the end
+                                mini_batch = next(eval_iter)
+
+                            img = mini_batch["images"].to(accelerator.device)
+                            model_outputs = model(img, k, train_cfg["blk_sz"])
+                            recon_lowpass_img = model_outputs["reconstruction"]
+                            img = model_outputs["img"]
+
+                            img = convert_to_PIL_imgs(img)  # a list PIL images
+                            recon_lowpass_img = convert_to_PIL_imgs(recon_lowpass_img)  # a list PIL images
+
+                            for b_id in range(mini_batch_size):  # distributed image save
+                                img_id = j * mini_batch_size * world_size + global_rank * mini_batch_size + b_id
+                                if img_id >= num_imgs:
+                                    break
+                                img[b_id].save(os.path.join(eval_org_imgs_path, f"{img_id}.jpg"))
+                                recon_lowpass_img[b_id].save(os.path.join(eval_recon_imgs_path, f"{img_id}.jpg"))
+
+                        accelerator.wait_for_everyone()
+                        if accelerator.is_main_process:
+                            accelerator.print(f"Evaluating low_pass FID{k}...")
+                            assert len(os.listdir(eval_org_imgs_path)) == num_imgs
+                            assert len(os.listdir(eval_recon_imgs_path)) == num_imgs
+
+                            fid = calculate_fid_given_paths([eval_org_imgs_path, eval_recon_imgs_path], device=accelerator.device)
+                            lpFID.append(round(fid, 4))
+
+                            shutil.rmtree(eval_org_imgs_path)  # remove the image folder
+                            shutil.rmtree(eval_recon_imgs_path)  # remove the image folder
+
+                        torch.cuda.empty_cache()
+                        accelerator.wait_for_everyone()
+
+                if accelerator.is_main_process:
+                    with open(os.path.join(args.working_directory, f'eval.log'), 'a') as f:
+                        print(f'step={global_step} low_pass_FID={lpFID}', file=f)
+
+                accelerator.wait_for_everyone()
+                model.train()
 
             ### save ckpt ###
             if (global_step % train_cfg["checkpoint_iterations"] == 0) or (global_step == train_cfg["total_training_iterations"]-1):

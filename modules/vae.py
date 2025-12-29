@@ -517,7 +517,7 @@ class VAE(EncoderDecoder):
 
         return x
     
-    def forward(self, x, high_filter=0, blk_sz=8):
+    def forward(self, x, high_filter=0, blk_sz=4):
         output = self.encode(x, return_stats=True)
 
         output["kl_loss"] = self.kl_loss(output["mu"], output["logvar"])
