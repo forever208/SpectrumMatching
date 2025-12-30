@@ -232,7 +232,7 @@ def main():
             discriminator.train()
 
         for i, batch in enumerate(dataloader):
-            high_filter = random.choice([0, 4, 5, 6,])
+            high_filter = random.choice([0, 8, 10, 12,])
             pixel_values = batch["images"].to(accelerator.device)
             model_toggle = (global_step % 2) == 0
             train_disc = (global_step >= train_cfg["disc_start"])
@@ -499,7 +499,7 @@ def main():
                 lpFID = []
 
                 with torch.no_grad():
-                    for k in range(0, 5):
+                    for k in [0, 2, 4, 6, 8]:
                         if accelerator.is_main_process:
                             os.makedirs(eval_org_imgs_path, exist_ok=True)
                             os.makedirs(eval_recon_imgs_path, exist_ok=True)
