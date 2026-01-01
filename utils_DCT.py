@@ -436,6 +436,61 @@ def read_64x64_rgb_and_dct(image_path, center="none", device="cpu"):
     print(coeffs[0, :4, :4])
 
 
+def rmsc(x: torch.Tensor, patch_sz: int = 1, eps: float = 1e-12) -> torch.Tensor:
+    """
+    RMS Spatial Contrast (RMSC) where each patch token is formed by *stacking*
+    a (patch_sz x patch_sz) block into the channel dimension (no pooling).
+
+    Args:
+        x: Tensor (B, C, H, W)
+        patch_sz: 1, 2, 4, ... must divide H and W
+        eps: numerical stability
+
+    Returns:
+        Tensor (B,)
+    """
+    if x.dim() != 4:
+        raise ValueError(f"x must be 4D (B,C,H,W), got {tuple(x.shape)}")
+    if patch_sz <= 0:
+        raise ValueError(f"patch_sz must be positive, got {patch_sz}")
+
+    B, C, H, W = x.shape
+    if (H % patch_sz) != 0 or (W % patch_sz) != 0:
+        raise ValueError(f"patch_sz={patch_sz} must divide H and W, got H={H}, W={W}")
+
+    Hp, Wp = H // patch_sz, W // patch_sz
+    T = Hp * Wp
+
+    if patch_sz == 1:
+        # tokens: (B, C, T)
+        xt = x.reshape(B, C, T)
+    else:
+        # Split into non-overlapping patches and stack patch pixels into channel dim:
+        # (B, C, H, W)
+        # -> (B, C, Hp, patch_sz, Wp, patch_sz)
+        # -> (B, Hp, Wp, C, patch_sz, patch_sz)
+        # -> (B, Hp*Wp, C*patch_sz*patch_sz)
+        # -> (B, C*patch_sz*patch_sz, T)
+        xt = (
+            x.view(B, C, Hp, patch_sz, Wp, patch_sz)
+             .permute(0, 2, 4, 1, 3, 5)
+             .reshape(B, T, C * patch_sz * patch_sz)
+             .transpose(1, 2)
+        )
+
+    # L2-normalize each token vector over "channel" dim: (B, C', T)
+    xt_hat = xt / xt.norm(p=2, dim=1, keepdim=True).clamp_min(eps)
+
+    # Mean of normalized tokens across spatial locations: (B, C', 1)
+    x_bar = xt_hat.mean(dim=2, keepdim=True)
+
+    # Per-token squared L2 distance to mean: (B, T)
+    sq_dist = (xt_hat - x_bar).pow(2).sum(dim=1)
+
+    # RMSC per sample: (B,)
+    return torch.sqrt(sq_dist.mean(dim=1).clamp_min(eps))
+
+
 if __name__ == "__main__":
     # back_prop_debug()
     # read_64x64_rgb_and_dct("/home/mang/Downloads/ffhq256/ffhq256/00002.jpg", center="none", device="cpu")

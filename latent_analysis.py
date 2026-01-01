@@ -11,7 +11,7 @@ from modules import LDMConfig, VAE
 from dataset import get_dataset
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
-from utils_DCT import latent_spectral_reg_dct, split_into_blocks_torch, combine_blocks_torch, dct_2d_torch_unified, idct_2d_torch_unified
+from utils_DCT import latent_spectral_reg_dct, split_into_blocks_torch, combine_blocks_torch, dct_2d_torch_unified, idct_2d_torch_unified, gaussian_blur, downsample_to, rmsc
 import torch.nn.functional as F
 from utils import convert_to_PIL_imgs
 from eval_utils.fid_score import calculate_fid_given_paths
@@ -617,6 +617,62 @@ def lowpass_rFID(path_to_pretrained_weights=None, config_file=None,
     shutil.rmtree(eval_recon_imgs_path)  # remove the image folder
 
 
+def rmsc_loss(path_to_pretrained_weights=None, config_file=None, dataset=None,
+                        img_sz=None, path_to_dataset=None, bs=1, max_samples=5000):
+
+    print("evaluating RMSC loss for ckpt:", path_to_pretrained_weights)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    ### Load VAE Config ###
+    with open(config_file, "r") as f:
+        vae_config = yaml.safe_load(f)
+        config = LDMConfig(**vae_config["vae"])
+
+    ### Load Model and weights ###
+    model = VAE(config)
+    state_dict = load_file(path_to_pretrained_weights)
+    model.load_state_dict(state_dict, strict=True)
+    model.eval()
+    model = model.to(device)
+
+    ### Load Dataset ###
+    dataset, _ = get_dataset(dataset=dataset, path_to_data=path_to_dataset, num_channels=3, img_size=img_sz,
+                             random_resize=False, random_flip_p=0.0, train=False)
+    loader = DataLoader(dataset, batch_size=bs, shuffle=True, drop_last=False,
+                        num_workers=8, pin_memory=True, persistent_workers=True)
+    total_in_dataset = len(dataset)
+    print(f"found {total_in_dataset} samples in {dataset}")
+
+    target_N = min(max_samples, total_in_dataset)
+    num_iterations = target_N // bs
+    x_RMSC = []
+    z_RMSC = []
+    eval_iter = iter(loader)
+    for i in tqdm(range(num_iterations), desc='RMSC loss'):
+        batch = next(eval_iter)
+
+        with torch.no_grad():
+            img = batch["images"].to(device)  # (batch, 3, img_h, img_w)
+            latent = model.encode(img, scale_factor=1.0)  # mean and logvar, (batch, 8, 32, 32)
+            latent = latent["posterior"]  # (batch, C, H, W)
+            _, _, hz, wz = latent.shape
+
+
+            img = gaussian_blur(img, kernel_size=7, sigma=1.2)
+            img = downsample_to(img, (hz, wz))
+            img_rmsc = rmsc(img, patch_sz=1)  # (batch, )
+            latent_rmsc = rmsc(latent, patch_sz=1)  # (batch, )
+            x_RMSC.append(img_rmsc)
+            z_RMSC.append(latent_rmsc)
+
+    x_RMSC = torch.cat(x_RMSC).mean().item()
+    z_RMSC = torch.cat(z_RMSC).mean().item()
+
+    print(f"Mean RMSC of x over {num_iterations * bs} samples: {x_RMSC:.6f}")
+    print(f"Mean RMSC of z over {num_iterations * bs} samples: {z_RMSC:.6f}")
+    print(f"RMSC loss is {z_RMSC - x_RMSC}")
+
+
 if __name__ == "__main__":
     # visualize_latent(
     #     path_to_pretrained_weights='/home/mang/Downloads/celeba256_SDVAE_bf16_b48_f16d16_flip_400k/SDVAE/checkpoint_330000/model.safetensors',
@@ -632,12 +688,13 @@ if __name__ == "__main__":
     #     bs=8, max_samples=30000, n_bins=16,
     # )
 
-    # spectrum_loss(
-    #     path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SDVAE_bf16_b48_f16_flip_400k/SDVAE/checkpoint_250000/model.safetensors',
-    #     config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
-    #     path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
-    #     bs=100, max_samples=5000
-    # )
+    # for ckpt in [280, 360, 400, 460]:
+    #     spectrum_loss(
+    #         path_to_pretrained_weights=f'/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SM_b48_f16_16bins_log001_DSM_blk8/SDVAE/checkpoint_{ckpt}000/model.safetensors',
+    #         config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+    #         path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
+    #         bs=100, max_samples=10000
+    #     )
 
     # downsample_recon_L1_loss(
     #     path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SDVAE_b48_f16d16_downsam/SDVAE/checkpoint_50000/model.safetensors',
@@ -654,35 +711,20 @@ if __name__ == "__main__":
     #     down_factor=4, batch_size=100, max_samples=5000,
     # )
 
-    for i in range(0, 5):
-        lowpass_rFID(
-            path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SM_b48_f16_16bins_log000_decodeSM_d16/SDVAE/checkpoint_200000/model.safetensors',
-            config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
-            path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
-            path_to_save_imgs='/leonardo_work/EUHPC_B29_014',
-            batch_size=100, max_samples=10000, blk_sz=4, k=i
-        )
+    for i in [0, 2, 4, 6, 8]:
+        for ckpt in [230, 290, 310]:
+            lowpass_rFID(
+                path_to_pretrained_weights=f'/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SM_b48_f16_16bins_log001_ftVAE/SDVAE/checkpoint_{ckpt}000/model.safetensors',
+                config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+                path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
+                path_to_save_imgs='/leonardo_work/EUHPC_B29_014',
+                batch_size=100, max_samples=10000, blk_sz=8, k=i
+            )
 
-        lowpass_rFID(
-            path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SM_b48_f16_16bins_log000_decodeSM_d16/SDVAE/checkpoint_300000/model.safetensors',
-            config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
-            path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
-            path_to_save_imgs='/leonardo_work/EUHPC_B29_014',
-            batch_size=100, max_samples=10000, blk_sz=4, k=i
-        )
-
-        lowpass_rFID(
-            path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SM_b48_f16_16bins_log000_decodeSM_d16/SDVAE/checkpoint_350000/model.safetensors',
-            config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
-            path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
-            path_to_save_imgs='/leonardo_work/EUHPC_B29_014',
-            batch_size=100, max_samples=10000, blk_sz=4, k=i
-        )
-
-        lowpass_rFID(
-            path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SM_b48_f16_16bins_log000_decodeSM_d16/SDVAE/checkpoint_390000/model.safetensors',
-            config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
-            path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
-            path_to_save_imgs='/leonardo_work/EUHPC_B29_014',
-            batch_size=100, max_samples=10000, blk_sz=4, k=i
-        )
+    # for ckpt in [280, 360, 400, 460]:
+    #     rmsc_loss(
+    #         path_to_pretrained_weights=f'/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SM_b48_f16_16bins_log001_DSM_blk8/SDVAE/checkpoint_{ckpt}000/model.safetensors',
+    #         config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+    #         path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
+    #         bs=100, max_samples=30000
+    #     )
