@@ -199,7 +199,7 @@ def main():
         )
 
     ### Initialize log Variables ###
-    model_log = {"loss": 0, "percept_loss": 0, "recon_loss": 0, "lpips_loss": 0, "kl_loss": 0, "sm_loss": 0, "rmsc_loss": 0, "disc_loss": 0, "adp_weight": 0}
+    model_log = {"loss": 0, "percept_loss": 0, "recon_loss": 0, "lpips_loss": 0, "kl_loss": 0, "sm_loss": 0, "spec_diff":0, "rmsc_loss": 0, "disc_loss": 0, "adp_weight": 0}
     disc_log = {"disc_loss": 0, "logits_real": 0, "logits_fake": 0}
 
     def reset_log(log):
@@ -222,6 +222,7 @@ def main():
     eval_lpips = []
     eval_ssim = []
     eval_SpecDiff = []
+    eval_sm = []
     eval_rmsc = []
 
     for key, value in train_cfg.items():
@@ -320,6 +321,7 @@ def main():
                         "recon_loss": reconstruction_loss,
                         "lpips_loss": lpips_loss,
                         "kl_loss": kl_loss,
+                        "spec_diff": model_outputs["spec_diff"],
                         "sm_loss": sm_loss,
                         "rmsc_loss": rmsc_loss,
                         "disc_loss": gen_loss,
@@ -416,7 +418,8 @@ def main():
                         recon_imgs = outputs["reconstruction"]
                         eval_lpips.append(lpips_loss_fn(recon_imgs, org_imgs).mean())
                         eval_ssim.append(ssim_fn(recon_imgs, org_imgs))
-                        eval_SpecDiff.append(outputs["sm_loss"])
+                        eval_SpecDiff.append(outputs["spec_diff"])
+                        eval_sm.append(outputs["sm_loss"])
                         eval_rmsc.append(outputs["rmsc_loss"])
 
                     org_imgs = convert_to_PIL_imgs(org_imgs)  # a list PIL images
@@ -476,16 +479,20 @@ def main():
                     eval_ssim = torch.tensor(eval_ssim)
                     eval_ssim = eval_ssim.mean().item()
 
-                    accelerator.print(f"Evaluating SM...")
+                    accelerator.print(f"Evaluating SpecDiff...")
                     eval_SpecDiff = torch.tensor(eval_SpecDiff)
                     eval_SpecDiff = eval_SpecDiff.mean().item()
+
+                    accelerator.print(f"Evaluating SM...")
+                    eval_sm = torch.tensor(eval_sm)
+                    eval_sm = eval_sm.mean().item()
 
                     accelerator.print(f"Evaluating RMSC...")
                     eval_rmsc = torch.tensor(eval_rmsc)
                     eval_rmsc = eval_rmsc.mean().item()
 
                     with open(os.path.join(args.working_directory, f'eval.log'), 'a') as f:
-                        print(f'step={global_step} rFID={fid:.5f} PSNR={avg_psnr:.5f} LPIPS={eval_lpips:.5f} SSIM={eval_ssim:.5f} SM={eval_SpecDiff:.5f}, RMSC={eval_rmsc:.5f}', file=f)
+                        print(f'step={global_step} rFID={fid:.5f} PSNR={avg_psnr:.5f} LPIPS={eval_lpips:.5f} SSIM={eval_ssim:.5f} SpecDiff={eval_SpecDiff:.5f}, SM={eval_sm:.5f}, RMSC={eval_rmsc:.5f}', file=f)
 
                     # reset
                     shutil.rmtree(eval_org_imgs_path)  # remove the image folder
@@ -493,6 +500,7 @@ def main():
                     eval_lpips = []
                     eval_ssim = []
                     eval_SpecDiff = []
+                    eval_sm = []
                     eval_rmsc = []
                     model.train()
 
