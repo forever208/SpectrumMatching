@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .layers import ResidualBlock2D, UpSampleBlock2D, DownSampleBlock2D
 from .transformer import Attention
-from utils_DCT import latent_spectral_reg_dct, rmsc, gaussian_blur, downsample_to
+from utils_DCT import latent_spectral_reg_dct, rmsc, rmsc_unnorm, gaussian_blur, downsample_to
 
 
 class EncoderBlock2D(nn.Module):
@@ -527,13 +527,13 @@ class VAE(EncoderDecoder):
         output["spec_diff"] = latent_spectral_reg_dct(
             x, output["posterior"],
             blur_ks=7, blur_sigma=1.2, n_bins=16,
-            loss_type="kl", log_power=True, center="none", remove_dc=False, delta=0.0
+            loss_type="kl", log_power=True, center="mean", remove_dc=True, delta=0.0
         )
 
         output["sm_loss"] = latent_spectral_reg_dct(
             x, output["posterior"],
             blur_ks=7, blur_sigma=1.2, n_bins=16,
-            loss_type="kl", log_power=True, center="none", remove_dc=False, delta=0.4
+            loss_type="kl", log_power=True, center="mean", remove_dc=True, delta=0.4
         )
 
         _, _, hz, wz = output["posterior"].shape
