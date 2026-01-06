@@ -240,6 +240,9 @@ def visualize_PSD(n_bins=16, DCT_center=True):
         # ESM, ftVAE, log001
         pz_290k = [0.2705, 0.2427, 0.1507, 0.1038, 0.0567, 0.041, 0.0304, 0.0223, 0.0179, 0.0159, 0.0128, 0.0107, 0.0078, 0.0063, 0.0056, 0.0049]
 
+        # ESM delta04, ftVAE, log001
+        pz_280k = [0.228, 0.2003, 0.141, 0.1109, 0.07, 0.0528, 0.0394, 0.03, 0.0249, 0.0228, 0.0192, 0.0164, 0.0129, 0.0112, 0.0105, 0.0099]
+
         # RMSC, ftVAE, 1.0
         pz_270k = [0.1813, 0.1454, 0.111, 0.0967, 0.0755, 0.0656, 0.0551, 0.0467, 0.0405, 0.0376, 0.0331, 0.0292, 0.024, 0.0209, 0.0194, 0.018]
 
@@ -255,9 +258,9 @@ def visualize_PSD(n_bins=16, DCT_center=True):
     plt.plot(x, px, marker="o", linewidth=2, label="px")
     plt.plot(x, pz_300k, marker="o", linewidth=2, label="SDVAE")
     # plt.plot(x, pz_380k, marker="o", linewidth=2, label="downsam")
-    plt.plot(x, pz_290k, marker="o", linewidth=2, label="ESM ftVAE")
+    plt.plot(x, pz_280k, marker="o", linewidth=2, label="ESM delta04")
     # plt.plot(x, pz_440k, marker="o", linewidth=2, label="DSM")
-    plt.plot(x, pz_270k, marker="o", linewidth=2, label="RMSC ftVAE")
+    plt.plot(x, pz_270k, marker="o", linewidth=2, label="RMSC")
 
     plt.xlabel("Index / bin")
     plt.ylabel("Value")

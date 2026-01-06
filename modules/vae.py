@@ -517,7 +517,7 @@ class VAE(EncoderDecoder):
 
         return x
     
-    def forward(self, x):
+    def forward(self, x, delta=0.0):
         output = self.encode(x, return_stats=True)
         reconstruction = self.forward_dec(output["posterior"])
         output["reconstruction"] = reconstruction
@@ -533,7 +533,7 @@ class VAE(EncoderDecoder):
         output["sm_loss"] = latent_spectral_reg_dct(
             x, output["posterior"],
             blur_ks=7, blur_sigma=1.2, n_bins=16,
-            loss_type="kl", log_power=True, center="mean", remove_dc=True, delta=0.4
+            loss_type="kl", log_power=True, center="mean", remove_dc=True, delta=delta
         )
 
         _, _, hz, wz = output["posterior"].shape

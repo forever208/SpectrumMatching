@@ -248,7 +248,7 @@ def main():
                 else:
                     generator_step = False
 
-            model_outputs = model(pixel_values)
+            model_outputs = model(pixel_values, delta=train_cfg["delta"])
             reconstructions = model_outputs["reconstruction"]
 
             ### train the VAE ###
@@ -414,7 +414,7 @@ def main():
 
                     org_imgs = mini_batch["images"].to(accelerator.device)
                     with torch.no_grad():
-                        outputs = model(org_imgs)
+                        outputs = model(org_imgs, delta=train_cfg["delta"])
                         recon_imgs = outputs["reconstruction"]
                         eval_lpips.append(lpips_loss_fn(recon_imgs, org_imgs).mean())
                         eval_ssim.append(ssim_fn(recon_imgs, org_imgs))
