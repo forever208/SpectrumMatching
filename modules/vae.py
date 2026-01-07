@@ -524,13 +524,13 @@ class VAE(EncoderDecoder):
 
         output["kl_loss"] = self.kl_loss(output["mu"], output["logvar"])
 
-        output["spec_diff"] = latent_spectral_reg_dct(
+        output["sm_rgb"] = latent_spectral_reg_dct(
             x, output["posterior"],
             blur_ks=7, blur_sigma=1.2, n_bins=16,
             loss_type="kl", log_power=True, center="mean", remove_dc=True, delta=0.0
         )
 
-        output["sm_loss"] = latent_spectral_reg_dct(
+        output["sm_delta"] = latent_spectral_reg_dct(
             x, output["posterior"],
             blur_ks=7, blur_sigma=1.2, n_bins=16,
             loss_type="kl", log_power=True, center="mean", remove_dc=True, delta=delta

@@ -120,16 +120,42 @@ def main():
 
     ### Get DataLoader ###
     mini_batchsize = train_cfg["per_gpu_batch_size"] // train_cfg["gradient_accumulations_steps"]
-    dataset, _ = get_dataset(
-        dataset=args.dataset,
-        path_to_data=args.path_to_dataset,
-        num_channels=vae_config["in_channels"],
-        img_size=vae_config["img_size"],
-        random_resize=train_cfg["random_resize"],  # default as False
-        interpolation=train_cfg["interpolation"],
-        random_flip_p=train_cfg["random_flip_p"]
-    )
-    accelerator.print("Number of Training Samples:", len(dataset))
+
+    if args.dataset == 'imagenet':
+        dataset, _ = get_dataset(
+            dataset='imagenet_train',
+            path_to_data=f'{args.path_to_dataset}/train',
+            num_channels=vae_config["in_channels"],
+            img_size=vae_config["img_size"],
+            random_resize=train_cfg["random_resize"],  # default as False
+            interpolation=train_cfg["interpolation"],
+            random_flip_p=train_cfg["random_flip_p"]
+        )
+        accelerator.print("Number of Training Samples:", len(dataset))
+
+        val_dataset, _ = get_dataset(
+            dataset='imagenet_val',
+            path_to_data=f'{args.path_to_dataset}/val',
+            num_channels=vae_config["in_channels"],
+            img_size=vae_config["img_size"],
+            random_resize=False,  # default as False
+            interpolation=train_cfg["interpolation"],
+            random_flip_p=0.0
+        )
+        accelerator.print("Number of validation Samples:", len(val_dataset))
+
+    else:
+        dataset, _ = get_dataset(
+            dataset=args.dataset,
+            path_to_data=args.path_to_dataset,
+            num_channels=vae_config["in_channels"],
+            img_size=vae_config["img_size"],
+            random_resize=train_cfg["random_resize"],  # default as False
+            interpolation=train_cfg["interpolation"],
+            random_flip_p=train_cfg["random_flip_p"]
+        )
+        accelerator.print("Number of Training Samples:", len(dataset))
+        val_dataset = dataset
 
     dataloader = DataLoader(
         dataset,
@@ -141,7 +167,7 @@ def main():
     )
 
     eval_dataloader = DataLoader(
-        dataset,
+        val_dataset,
         batch_size=mini_batchsize,
         pin_memory=False,
         num_workers=4,
@@ -199,7 +225,7 @@ def main():
         )
 
     ### Initialize log Variables ###
-    model_log = {"loss": 0, "percept_loss": 0, "recon_loss": 0, "lpips_loss": 0, "kl_loss": 0, "sm_loss": 0, "spec_diff":0, "rmsc_loss": 0, "disc_loss": 0, "adp_weight": 0}
+    model_log = {"loss": 0, "percept_loss": 0, "recon_loss": 0, "lpips_loss": 0, "kl_loss": 0, "sm_delta": 0, "sm_rgb":0, "rmsc_loss": 0, "disc_loss": 0, "adp_weight": 0}
     disc_log = {"disc_loss": 0, "logits_real": 0, "logits_fake": 0}
 
     def reset_log(log):
@@ -221,8 +247,8 @@ def main():
     eval_recon_imgs_path = os.path.join(args.eval_dir, "eval_recon_imgs")
     eval_lpips = []
     eval_ssim = []
-    eval_SpecDiff = []
-    eval_sm = []
+    eval_sm_rgb = []
+    eval_sm_delta = []
     eval_rmsc = []
 
     for key, value in train_cfg.items():
@@ -301,7 +327,7 @@ def main():
                     loss = loss + kl_loss * train_cfg["kl_weight"]
 
                     ### SM Loss ###
-                    sm_loss = model_outputs["sm_loss"].mean()
+                    sm_loss = model_outputs["sm_delta"].mean()
                     loss = loss + sm_loss * train_cfg["sm_weight"]
 
                     ### RMSC Loss ###
@@ -321,8 +347,8 @@ def main():
                         "recon_loss": reconstruction_loss,
                         "lpips_loss": lpips_loss,
                         "kl_loss": kl_loss,
-                        "spec_diff": model_outputs["spec_diff"],
-                        "sm_loss": sm_loss,
+                        "sm_rgb": model_outputs["sm_rgb"],
+                        "sm_delta": sm_loss,
                         "rmsc_loss": rmsc_loss,
                         "disc_loss": gen_loss,
                         "adp_weight": adaptive_weight
@@ -418,8 +444,8 @@ def main():
                         recon_imgs = outputs["reconstruction"]
                         eval_lpips.append(lpips_loss_fn(recon_imgs, org_imgs).mean())
                         eval_ssim.append(ssim_fn(recon_imgs, org_imgs))
-                        eval_SpecDiff.append(outputs["spec_diff"])
-                        eval_sm.append(outputs["sm_loss"])
+                        eval_sm_rgb.append(outputs["sm_rgb"])
+                        eval_sm_delta.append(outputs["sm_delta"])
                         eval_rmsc.append(outputs["rmsc_loss"])
 
                     org_imgs = convert_to_PIL_imgs(org_imgs)  # a list PIL images
@@ -480,27 +506,27 @@ def main():
                     eval_ssim = eval_ssim.mean().item()
 
                     accelerator.print(f"Evaluating SpecDiff...")
-                    eval_SpecDiff = torch.tensor(eval_SpecDiff)
-                    eval_SpecDiff = eval_SpecDiff.mean().item()
+                    eval_sm_rgb = torch.tensor(eval_sm_rgb)
+                    eval_sm_rgb = eval_sm_rgb.mean().item()
 
                     accelerator.print(f"Evaluating SM...")
-                    eval_sm = torch.tensor(eval_sm)
-                    eval_sm = eval_sm.mean().item()
+                    eval_sm_delta = torch.tensor(eval_sm_delta)
+                    eval_sm_delta = eval_sm_delta.mean().item()
 
                     accelerator.print(f"Evaluating RMSC...")
                     eval_rmsc = torch.tensor(eval_rmsc)
                     eval_rmsc = eval_rmsc.mean().item()
 
                     with open(os.path.join(args.working_directory, f'eval.log'), 'a') as f:
-                        print(f'step={global_step} rFID={fid:.5f} PSNR={avg_psnr:.5f} LPIPS={eval_lpips:.5f} SSIM={eval_ssim:.5f} SpecDiff={eval_SpecDiff:.5f}, SM={eval_sm:.5f}, RMSC={eval_rmsc:.5f}', file=f)
+                        print(f'step={global_step} rFID={fid:.5f} PSNR={avg_psnr:.5f} LPIPS={eval_lpips:.5f} SSIM={eval_ssim:.5f} sm_rgb={eval_sm_rgb:.5f}, sm_delta={eval_sm_delta:.5f}, RMSC={eval_rmsc:.5f}', file=f)
 
                     # reset
                     shutil.rmtree(eval_org_imgs_path)  # remove the image folder
                     shutil.rmtree(eval_recon_imgs_path)  # remove the image folder
                     eval_lpips = []
                     eval_ssim = []
-                    eval_SpecDiff = []
-                    eval_sm = []
+                    eval_sm_rgb = []
+                    eval_sm_delta = []
                     eval_rmsc = []
                     model.train()
 
