@@ -229,12 +229,13 @@ def latent_spectral_reg_dct(
     blur_ks: int = 7,
     blur_sigma: float = 1.2,
     n_bins: int = 16,
-    loss_type: str = "l2",        # "l2" or "kl"
+    loss_type: str = "kl",        # "l2" or "kl"
     center: str = "mean",         # DCT centering mode
     log_power: bool = True,
     remove_dc: bool = True,
     eps: float = 1e-8,
     return_dist: bool = False,
+    delta: float = 0.0,
 ):
     B, Cz, hz, wz = z.shape
 
@@ -249,6 +250,10 @@ def latent_spectral_reg_dct(
     # 3) group spectrum into num_bins, sum the PSD into each bin
     sx = radial_band_energy(Px, n_bins=n_bins, eps=eps)  # (B, n_bins)
     sz = radial_band_energy(Pz, n_bins=n_bins, eps=eps)  # (B, n_bins)
+
+    # flatten the PSD, which will be the target of z to match, e.g. turn sx (1/f^2) into proxy sx' (1/f^1.6) ----
+    f = torch.arange(1, n_bins + 1, device=sx.device, dtype=sx.dtype).view(1, -1)
+    sx = sx * (f ** delta)  # target PSD is 1/f^2 if delta=0, target PSD is 1/f^1.6 if delta=0.4
 
     if log_power:
         sx = torch.log(sx + eps + 1.0)

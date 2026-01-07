@@ -517,17 +517,23 @@ class VAE(EncoderDecoder):
 
         return x
     
-    def forward(self, x, high_filter=0, blk_sz=8):
+    def forward(self, x, high_filter=0, blk_sz=8, delta=0.0):
         output = self.encode(x, return_stats=True)
 
         # KL reg
         output["kl_loss"] = self.kl_loss(output["mu"], output["logvar"])
 
         # SM reg
-        output["sm_loss"] = latent_spectral_reg_dct(
+        output["sm_rgb"] = latent_spectral_reg_dct(
             x, output["posterior"],
             blur_ks=7, blur_sigma=1.2, n_bins=16,
             loss_type="kl", log_power=True, center="mean", remove_dc=True,
+        )
+
+        output["sm_delta"] = latent_spectral_reg_dct(
+            x, output["posterior"],
+            blur_ks=7, blur_sigma=1.2, n_bins=16,
+            loss_type="kl", log_power=True, center="none", remove_dc=False, delta=delta
         )
 
         # RMSC reg
