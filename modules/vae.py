@@ -533,7 +533,7 @@ class VAE(EncoderDecoder):
         output["sm_delta"] = latent_spectral_reg_dct(
             x, output["posterior"],
             blur_ks=7, blur_sigma=1.2, n_bins=16,
-            loss_type="kl", log_power=True, center="none", remove_dc=False, delta=delta
+            loss_type="kl", log_power=True, center="none", remove_dc=True, delta=delta
         )
 
         # RMSC reg

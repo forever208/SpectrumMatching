@@ -120,16 +120,42 @@ def main():
 
     ### Get DataLoader ###
     mini_batchsize = train_cfg["per_gpu_batch_size"] // train_cfg["gradient_accumulations_steps"]
-    dataset, _ = get_dataset(
-        dataset=args.dataset,
-        path_to_data=args.path_to_dataset,
-        num_channels=vae_config["in_channels"],
-        img_size=vae_config["img_size"],
-        random_resize=train_cfg["random_resize"],  # default as False
-        interpolation=train_cfg["interpolation"],
-        random_flip_p=train_cfg["random_flip_p"]
-    )
-    accelerator.print("Number of Training Samples:", len(dataset))
+
+    if args.dataset == 'imagenet':
+        dataset, _ = get_dataset(
+            dataset='imagenet_train',
+            path_to_data=f'{args.path_to_dataset}/train',
+            num_channels=vae_config["in_channels"],
+            img_size=vae_config["img_size"],
+            random_resize=train_cfg["random_resize"],  # default as False
+            interpolation=train_cfg["interpolation"],
+            random_flip_p=train_cfg["random_flip_p"]
+        )
+        accelerator.print("Number of Training Samples:", len(dataset))
+
+        val_dataset, _ = get_dataset(
+            dataset='imagenet_val',
+            path_to_data=f'{args.path_to_dataset}/val',
+            num_channels=vae_config["in_channels"],
+            img_size=vae_config["img_size"],
+            random_resize=False,  # default as False
+            interpolation=train_cfg["interpolation"],
+            random_flip_p=0.0
+        )
+        accelerator.print("Number of validation Samples:", len(val_dataset))
+
+    else:
+        dataset, _ = get_dataset(
+            dataset=args.dataset,
+            path_to_data=args.path_to_dataset,
+            num_channels=vae_config["in_channels"],
+            img_size=vae_config["img_size"],
+            random_resize=train_cfg["random_resize"],  # default as False
+            interpolation=train_cfg["interpolation"],
+            random_flip_p=train_cfg["random_flip_p"]
+        )
+        accelerator.print("Number of Training Samples:", len(dataset))
+        val_dataset = dataset
 
     dataloader = DataLoader(
         dataset,
@@ -141,7 +167,7 @@ def main():
     )
 
     eval_dataloader = DataLoader(
-        dataset,
+        val_dataset,
         batch_size=mini_batchsize,
         pin_memory=False,
         num_workers=4,
