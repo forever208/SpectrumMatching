@@ -93,7 +93,7 @@ def extract_latent_ddp(pretrained_weights, config_file, batch_size, dataset, pat
     flip_dataset, _ = get_dataset(dataset=dataset, path_to_data=path_to_dataset, train=False, random_flip_p=1.0)
     combined_dataset = ConcatDataset([org_dataset, flip_dataset])
     loader = DataLoader(combined_dataset, batch_size=batch_size, shuffle=True, drop_last=False,
-                        num_workers=8, pin_memory=True, persistent_workers=True)
+                        num_workers=12, pin_memory=True, persistent_workers=True)
 
     # prepare
     model, loader = accelerator.prepare(model, loader)
@@ -119,6 +119,7 @@ def extract_latent_ddp(pretrained_weights, config_file, batch_size, dataset, pat
     for batch in tqdm(loader, disable=not accelerator.is_local_main_process):
         with torch.no_grad():
             img = batch["images"].to(device, non_blocking=True)
+            class_label = batch["class_conditioning"]  # could be tensor/list/etc.
 
             moments = base_model.forward_enc(img)  # mean and logvar, (batch, 8, 32, 32)
             mu, logvar = torch.chunk(moments, chunks=2, dim=1)  # get mean and logvar (batch, 4, 32, 32)
@@ -137,12 +138,22 @@ def extract_latent_ddp(pretrained_weights, config_file, batch_size, dataset, pat
                 cnt += x.numel()
                 stat_taken += take
 
-                # save moments (unique index per process)
-                moments_np = moments.detach().cpu().numpy()
-                for moment in moments_np:
-                    out_idx = rank + world * local_i
-                    np.save(f"{path_to_latents}/{out_idx}.npy", moment)
-                    local_i += 1
+            # save moments and labels (unique index per process)
+            moments_np = moments.detach().cpu().numpy()
+
+            if torch.is_tensor(class_label):
+                labels_np = class_label.detach().cpu().numpy()  # (B, ...) or (B,)
+            else:
+                labels_np = np.asarray(class_label)  # try best; could be list
+            assert len(moments_np) == len(labels_np), f"batch mismatch: moments={len(moments_np)} labels={len(labels_np)}"
+
+            for i in range(len(moments_np)):
+                out_idx = rank + world * local_i
+                z_i = moments_np[i]
+                label_i = labels_np[i]
+                payload = np.array([z_i, label_i], dtype=object)  # IMPORTANT for unpacking later
+                np.save(os.path.join(path_to_latents, f"{out_idx}.npy"), payload, allow_pickle=True)
+                local_i += 1
 
     # reduce stats across all processes
     sum_x = accelerator.reduce(sum_x, reduction="sum")
@@ -154,7 +165,8 @@ def extract_latent_ddp(pretrained_weights, config_file, batch_size, dataset, pat
         var_value = (sum_x2 / cnt - (sum_x / cnt) ** 2).item() if cnt.item() > 0 else float("nan")
         std_value = float(np.sqrt(max(var_value, 0.0))) if np.isfinite(var_value) else float("nan")
 
-        accelerator.print(f"latent stat over ~{num_stat_samples} samples: mean is {mean_value} std scaling factor is {1 / std_value}")
+        accelerator.print(f"latent stat over {num_stat_samples} samples: mean is {mean_value} std scaling factor is {1 / std_value}")
+        accelerator.print(f"std and mean saved into {path_to_latents}")
 
 
 
@@ -167,10 +179,11 @@ if __name__ == "__main__":
     #     num_stat_samples=50000
     # )
 
+    # run by cmd: accelerate launch extract_VAE_latents.py
     extract_latent_ddp(
-        pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/imagenet256_SDVAE_bf16_b128_f16_flip_400k/SDVAE/checkpoint_280000/model.safetensors',
-        config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', batch_size=100, dataset='imagenet',
+        pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/imagenet256_SDVAE_bf16_b128_f16_flip_400k/SDVAE/checkpoint_430000/model.safetensors',
+        config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', batch_size=100, dataset='imagenet_train',
         path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/imagenet256/train',
-        path_to_latents='/leonardo_work/EUHPC_B29_014/datasets/imagenet256_latents/imagenet256_SDVAE_f16_280k',
+        path_to_latents='/leonardo_work/EUHPC_B29_014/datasets/imagenet256_latents/imagenet256_SDVAE_f16_430k',
         num_stat_samples=50000
     )
