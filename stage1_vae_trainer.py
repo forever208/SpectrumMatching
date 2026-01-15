@@ -533,7 +533,7 @@ def main():
                 accelerator.wait_for_everyone()
 
                 # evaluate low-pass FID
-                num_imgs = 10000
+                num_imgs = train_cfg["num_eval_images"] // 5  # to save time
                 batch_size = mini_batch_size * accelerator.num_processes
                 num_iterations = num_imgs // batch_size + 1  # FID-10k
                 lpFID = []
