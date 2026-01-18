@@ -252,15 +252,23 @@ def visualize_PSD(n_bins=16, DCT_center=True):
         # delta 0.63, ftVAE
         pz_280k = [0.2698, 0.1903, 0.1196, 0.0991, 0.0616, 0.0522, 0.0371, 0.0298, 0.025, 0.0229, 0.0203, 0.0173, 0.016, 0.0139, 0.0131, 0.012]
 
+        # REPA, dino feature
+        px_rgb = [0.463, 0.1917, 0.1004, 0.0673, 0.0392, 0.0265, 0.0218, 0.0165, 0.0133, 0.0124, 0.0103, 0.0096, 0.0075, 0.0069, 0.0067, 0.0068]
+
+        pz_repa = [0.2302, 0.1449, 0.105, 0.0831, 0.0634, 0.0516, 0.0458, 0.0393, 0.0349, 0.0334, 0.033, 0.0294, 0.0275, 0.0267, 0.0263, 0.0254]
+
+        # iREPA, dino feature
+        pz_irepa = [0.2157, 0.1617, 0.1123, 0.0883, 0.0648, 0.0515, 0.0448, 0.0379, 0.0334, 0.0317, 0.0312, 0.0277, 0.0258, 0.025, 0.0245, 0.0238]
 
     x = list(range(1, len(px) + 1))  # 1..16 bins/indices
     plt.figure(figsize=(9, 5))
-    plt.plot(x, px, marker="o", linewidth=2, label="px")
-    plt.plot(x, pz_300k, marker="o", linewidth=2, label="SDVAE")
+    plt.plot(x, px_rgb, marker="o", linewidth=2, label="rgb")
+    plt.plot(x, pz_repa, marker="o", linewidth=2, label="repa")
+    plt.plot(x, pz_irepa, marker="o", linewidth=2, label="irepa")
     # plt.plot(x, pz_380k, marker="o", linewidth=2, label="downsam")
-    plt.plot(x, pz_280k, marker="o", linewidth=2, label="ESM delta04")
+    # plt.plot(x, pz_280k, marker="o", linewidth=2, label="ESM delta04")
     # plt.plot(x, pz_440k, marker="o", linewidth=2, label="DSM")
-    plt.plot(x, pz_270k, marker="o", linewidth=2, label="RMSC")
+    # plt.plot(x, pz_270k, marker="o", linewidth=2, label="RMSC")
 
     plt.xlabel("Index / bin")
     plt.ylabel("Value")
@@ -721,15 +729,15 @@ if __name__ == "__main__":
     #     path_to_dataset='/home/mang/Downloads/celeba256/celeba256_visual',
     # )
 
-    for ckpt in [30]:
-        spectrum_difference(
-            path_to_pretrained_weights=f'/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_b48_f16_ESM_16bins_delta10_high_ftVAE_log/SDVAE/checkpoint_{ckpt}0000/model.safetensors',
-            config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
-            path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
-            bs=100, max_samples=30000, n_bins=16, delta=0.0
-        )
+    # for ckpt in [30]:
+    #     spectrum_difference(
+    #         path_to_pretrained_weights=f'/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_b48_f16_ESM_16bins_delta10_high_ftVAE_log/SDVAE/checkpoint_{ckpt}0000/model.safetensors',
+    #         config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+    #         path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
+    #         bs=100, max_samples=30000, n_bins=16, delta=0.0
+    #     )
 
-    # visualize_PSD(n_bins=16, DCT_center=False)
+    visualize_PSD(n_bins=16, DCT_center=False)
 
     # for ckpt in [280, 360, 400, 460]:
     #     spectrum_loss(
