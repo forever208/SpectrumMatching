@@ -7,6 +7,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from accelerate import Accelerator
+from accelerate.utils import InitProcessGroupKwargs
+from datetime import timedelta
 from tqdm import tqdm
 from diffusers.optimization import get_scheduler
 import lpips
@@ -55,10 +57,12 @@ def main():
 
     ### Initialize Accelerator/Tracker ###
     path_to_experiment = os.path.join(args.working_directory, args.experiment_name)
+    pg_kwargs = InitProcessGroupKwargs(timeout=timedelta(minutes=120))
     accelerator = Accelerator(
         project_dir=path_to_experiment,
         gradient_accumulation_steps=train_cfg["gradient_accumulations_steps"],
-        log_with="wandb" if args.log_wandb else None
+        log_with="wandb" if args.log_wandb else None,
+        kwargs_handlers = [pg_kwargs]
     )
 
     if args.log_wandb:  # init wandb with accelerator

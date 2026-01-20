@@ -565,11 +565,13 @@ class VAE(EncoderDecoder):
             v = torch.arange(blk_sz, device=x.device).view(1, blk_sz)
             hf_mask = (u + v) >= thresh  # (8,8) True => to be zeroed
 
-            x[..., hf_mask] = 0
-            z[..., hf_mask] = 0  # low-pass filter
+            x[..., hf_mask] = 0.0
+            z[..., hf_mask] = 0.0  # low-pass filter
 
             x = idct_2d_torch_unified(x, center="none")  # (B, C, NUM_blocks, b, b)
             z = idct_2d_torch_unified(z, center="none")  # (B, C, num_blocks, b, b)
+
+            # x = torch.clamp(x, -1., 1.)
 
             x = combine_blocks_torch(x, H, W, blk_sz)  # (B, C, H, W)
             z = combine_blocks_torch(z, h, w, blk_sz)  # (B, C, h, w)

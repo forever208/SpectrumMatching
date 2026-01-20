@@ -64,6 +64,7 @@ def save_orig_and_generated_images(original_images, generated_image_tensors, pat
 
     ### Original Images have been scaled to [-1 to 1], rescale back to [0 to 255] ###
     original_images = original_images.float()
+    original_images = torch.clamp(original_images, -1., 1.)
     original_images = (original_images + 1) / 2
     original_images = original_images.cpu().permute(0,2,3,1).numpy()
     original_images = np.round(255 * original_images).astype(np.uint8)
@@ -87,7 +88,7 @@ def save_orig_and_generated_images(original_images, generated_image_tensors, pat
         x_offset += img_width
     
     ### Save Output ###
-    path_to_save = os.path.join(path_to_save_folder, f"iteration_{step}.png")
+    path_to_save = os.path.join(path_to_save_folder, f"iteration_{step}.jpg")
     final_image.save(path_to_save)
 
 
