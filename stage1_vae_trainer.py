@@ -420,6 +420,12 @@ def main():
                 global_step += 1
                 progress_bar.update(1)
 
+            ### save ckpt ###
+            if (global_step % train_cfg["checkpoint_iterations"] == 0) or (
+                    global_step == train_cfg["total_training_iterations"] - 1):
+                path_to_checkpoint = os.path.join(path_to_experiment, f"checkpoint_{global_step}")
+                accelerator.save_state(output_dir=path_to_checkpoint)
+
             ### Validation step ###
             if global_step % train_cfg["val_generation_freq"] == 0:
                 if accelerator.is_main_process:
@@ -536,66 +542,61 @@ def main():
                 torch.cuda.empty_cache()
                 accelerator.wait_for_everyone()
 
-                # evaluate low-pass FID
-                num_imgs = train_cfg["num_eval_images"] // 5  # to save time
-                batch_size = mini_batch_size * accelerator.num_processes
-                num_iterations = num_imgs // batch_size + 1  # FID-10k
-                lpFID = []
-
-                with torch.no_grad():
-                    for k in [0, 2, 4, 6, 8]:
-                        if accelerator.is_main_process:
-                            os.makedirs(eval_org_imgs_path, exist_ok=True)
-                            os.makedirs(eval_recon_imgs_path, exist_ok=True)
-
-                        for j in tqdm(range(num_iterations), disable=not accelerator.is_main_process, desc='sample2dir'):
-                            try:
-                                mini_batch = next(eval_iter)
-                            except StopIteration:
-                                eval_iter = iter(eval_dataloader)  # Restart the iterator if we reach the end
-                                mini_batch = next(eval_iter)
-
-                            img = mini_batch["images"].to(accelerator.device)
-                            model_outputs = model(img, k, train_cfg["blk_sz"])
-                            recon_lowpass_img = model_outputs["reconstruction"]
-                            img = model_outputs["img"]
-
-                            img = convert_to_PIL_imgs(img)  # a list PIL images
-                            recon_lowpass_img = convert_to_PIL_imgs(recon_lowpass_img)  # a list PIL images
-
-                            for b_id in range(mini_batch_size):  # distributed image save
-                                img_id = j * mini_batch_size * world_size + global_rank * mini_batch_size + b_id
-                                if img_id >= num_imgs:
-                                    break
-                                img[b_id].save(os.path.join(eval_org_imgs_path, f"{img_id}.jpg"))
-                                recon_lowpass_img[b_id].save(os.path.join(eval_recon_imgs_path, f"{img_id}.jpg"))
-
-                        accelerator.wait_for_everyone()
-                        if accelerator.is_main_process:
-                            accelerator.print(f"Evaluating low_pass FID{k}...")
-                            assert len(os.listdir(eval_org_imgs_path)) == num_imgs
-                            assert len(os.listdir(eval_recon_imgs_path)) == num_imgs
-
-                            fid = calculate_fid_given_paths([eval_org_imgs_path, eval_recon_imgs_path], device=accelerator.device)
-                            lpFID.append(round(fid, 4))
-
-                            shutil.rmtree(eval_org_imgs_path)  # remove the image folder
-                            shutil.rmtree(eval_recon_imgs_path)  # remove the image folder
-
-                        torch.cuda.empty_cache()
-                        accelerator.wait_for_everyone()
-
-                if accelerator.is_main_process:
-                    with open(os.path.join(args.working_directory, f'eval.log'), 'a') as f:
-                        print(f'step={global_step} low_pass_FID={lpFID}', file=f)
+                # # evaluate low-pass FID
+                # num_imgs = train_cfg["num_eval_images"] // 5  # to save time
+                # batch_size = mini_batch_size * accelerator.num_processes
+                # num_iterations = num_imgs // batch_size + 1  # FID-10k
+                # lpFID = []
+                #
+                # with torch.no_grad():
+                #     for k in [0, 2, 4, 6, 8]:
+                #         if accelerator.is_main_process:
+                #             os.makedirs(eval_org_imgs_path, exist_ok=True)
+                #             os.makedirs(eval_recon_imgs_path, exist_ok=True)
+                #
+                #         for j in tqdm(range(num_iterations), disable=not accelerator.is_main_process, desc='sample2dir'):
+                #             try:
+                #                 mini_batch = next(eval_iter)
+                #             except StopIteration:
+                #                 eval_iter = iter(eval_dataloader)  # Restart the iterator if we reach the end
+                #                 mini_batch = next(eval_iter)
+                #
+                #             img = mini_batch["images"].to(accelerator.device)
+                #             model_outputs = model(img, k, train_cfg["blk_sz"])
+                #             recon_lowpass_img = model_outputs["reconstruction"]
+                #             img = model_outputs["img"]
+                #
+                #             img = convert_to_PIL_imgs(img)  # a list PIL images
+                #             recon_lowpass_img = convert_to_PIL_imgs(recon_lowpass_img)  # a list PIL images
+                #
+                #             for b_id in range(mini_batch_size):  # distributed image save
+                #                 img_id = j * mini_batch_size * world_size + global_rank * mini_batch_size + b_id
+                #                 if img_id >= num_imgs:
+                #                     break
+                #                 img[b_id].save(os.path.join(eval_org_imgs_path, f"{img_id}.jpg"))
+                #                 recon_lowpass_img[b_id].save(os.path.join(eval_recon_imgs_path, f"{img_id}.jpg"))
+                #
+                #         accelerator.wait_for_everyone()
+                #         if accelerator.is_main_process:
+                #             accelerator.print(f"Evaluating low_pass FID{k}...")
+                #             assert len(os.listdir(eval_org_imgs_path)) == num_imgs
+                #             assert len(os.listdir(eval_recon_imgs_path)) == num_imgs
+                #
+                #             fid = calculate_fid_given_paths([eval_org_imgs_path, eval_recon_imgs_path], device=accelerator.device)
+                #             lpFID.append(round(fid, 4))
+                #
+                #             shutil.rmtree(eval_org_imgs_path)  # remove the image folder
+                #             shutil.rmtree(eval_recon_imgs_path)  # remove the image folder
+                #
+                #         torch.cuda.empty_cache()
+                #         accelerator.wait_for_everyone()
+                #
+                # if accelerator.is_main_process:
+                #     with open(os.path.join(args.working_directory, f'eval.log'), 'a') as f:
+                #         print(f'step={global_step} low_pass_FID={lpFID}', file=f)
 
                 accelerator.wait_for_everyone()
                 model.train()
-
-            ### save ckpt ###
-            if (global_step % train_cfg["checkpoint_iterations"] == 0) or (global_step == train_cfg["total_training_iterations"]-1):
-                path_to_checkpoint = os.path.join(path_to_experiment, f"checkpoint_{global_step}")
-                accelerator.save_state(output_dir=path_to_checkpoint)
 
             if global_step >= train_cfg["total_training_iterations"]:
                 print("Completed Training")

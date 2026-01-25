@@ -717,16 +717,23 @@ if __name__ == "__main__":
     #     config_file='configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
     #     path_to_dataset='/home/mang/Downloads/celeba256/celeba256_visual',
     # )
+    #
+    #
+    # spectrum_difference(
+    #     path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_b48_f16_ESM_16bins_delta063_ftVAE_log/SDVAE/checkpoint_280000/model.safetensors',
+    #     config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+    #     path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
+    #     bs=100, max_samples=30000, n_bins=16,
+    # )
 
-
-    spectrum_difference(
-        path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_b48_f16_ESM_16bins_delta063_ftVAE_log/SDVAE/checkpoint_280000/model.safetensors',
-        config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
-        path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
-        bs=100, max_samples=30000, n_bins=16,
-    )
-
-    visualize_PSD(n_bins=16, DCT_center=False)
+    # spectrum_difference(
+    #     path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_b48_f16_ESM_16bins_delta063_ftVAE_log/SDVAE/checkpoint_280000/model.safetensors',
+    #     config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+    #     path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
+    #     bs=100, max_samples=30000, n_bins=16,
+    # )
+    #
+    # visualize_PSD(n_bins=16, DCT_center=False)
 
     # for ckpt in [280, 360, 400, 460]:
     #     spectrum_loss(
@@ -753,3 +760,9 @@ if __name__ == "__main__":
     #         path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
     #         bs=100, max_samples=30000
     #     )
+
+    lowpass_rFID(path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/imagenet256_SDVAE_bf16_b128_f16_600k/SDVAE/checkpoint_410000/model.safetensors',
+                 config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml',
+                 batch_size=100, dataset="imagenet_train", img_sz=256,
+                 path_to_dataset="/leonardo_work/EUHPC_B29_014/datasets/imagenet256/train",
+                 path_to_save_imgs='/leonardo_work/EUHPC_B29_014', num_workers=12, max_samples=50000, k=2, blk_sz=8)
