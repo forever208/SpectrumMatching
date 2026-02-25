@@ -414,6 +414,11 @@ def main():
                 global_step += 1
                 progress_bar.update(1)
 
+            ### save ckpt ###
+            if (global_step % train_cfg["checkpoint_iterations"] == 0) or (global_step == train_cfg["total_training_iterations"]-1):
+                path_to_checkpoint = os.path.join(path_to_experiment, f"checkpoint_{global_step}")
+                accelerator.save_state(output_dir=path_to_checkpoint)
+
             ### Validation step ###
             if global_step % train_cfg["val_generation_freq"] == 0:
                 if accelerator.is_main_process:
@@ -532,11 +537,6 @@ def main():
 
                 torch.cuda.empty_cache()
                 accelerator.wait_for_everyone()
-
-            ### save ckpt ###
-            if (global_step % train_cfg["checkpoint_iterations"] == 0) or (global_step == train_cfg["total_training_iterations"]-1):
-                path_to_checkpoint = os.path.join(path_to_experiment, f"checkpoint_{global_step}")
-                accelerator.save_state(output_dir=path_to_checkpoint)
 
             if global_step >= train_cfg["total_training_iterations"]:
                 print("Completed Training")
