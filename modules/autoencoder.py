@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import numpy as np
 from einops import rearrange
+from utils_DCT import latent_spectral_reg_dct, split_into_blocks_torch, combine_blocks_torch, dct_2d_torch_unified, idct_2d_torch_unified, rmsc, gaussian_blur, downsample_to
+import torch.nn.functional as F
 
 
 class LinearAttention(nn.Module):
@@ -409,8 +411,8 @@ class Decoder(nn.Module):
         return h
 
 
-class FrozenAutoencoderKL(nn.Module):
-    def __init__(self, ddconfig, embed_dim, pretrained_path, scale_factor=0.18215):
+class AutoencoderKL(nn.Module):
+    def __init__(self, ddconfig, embed_dim, pretrained_path, scale_factor=1.0):
         super().__init__()
         print(f'Create autoencoder with scale_factor={scale_factor}')
         self.encoder = Encoder(**ddconfig)
@@ -420,15 +422,25 @@ class FrozenAutoencoderKL(nn.Module):
         self.post_quant_conv = torch.nn.Conv2d(embed_dim, ddconfig["z_channels"], 1)
         self.embed_dim = embed_dim
         self.scale_factor = scale_factor
-        m, u = self.load_state_dict(torch.load(pretrained_path, map_location='cpu'))
-        assert len(m) == 0 and len(u) == 0
-        self.eval()
-        self.requires_grad_(False)
+        if pretrained_path.endswith((".pth", ".pt")):
+            m, u = self.load_state_dict(torch.load(pretrained_path, map_location='cpu'))
+            print(f"Loaded official SDVAE ckpt from {pretrained_path}")
+            assert len(m) == 0 and len(u) == 0
 
-    def encode_moments(self, x):
+    def kl_loss(self, mean, logvar):
+        var = torch.exp(logvar)
+        kl_loss = -0.5 * torch.sum(1 + logvar - mean**2 - var, dim=[1,2,3])
+        return kl_loss
+
+    def forward_enc(self, x):
         h = self.encoder(x)
         moments = self.quant_conv(h)
         return moments
+
+    def forward_dec(self, z):
+        z = self.post_quant_conv(z)
+        z = self.decoder(z)
+        return z
 
     def sample(self, moments):
         mean, logvar = torch.chunk(moments, 2, dim=1)
@@ -438,10 +450,21 @@ class FrozenAutoencoderKL(nn.Module):
         z = self.scale_factor * z
         return z
 
-    def encode(self, x):
-        moments = self.encode_moments(x)
-        z = self.sample(moments)
-        return z
+    def encode(self, x, return_stats=False):
+        moments = self.forward_enc(x)
+
+        mean, logvar = torch.chunk(moments, 2, dim=1)
+        logvar = torch.clamp(logvar, -30.0, 20.0)
+        std = torch.exp(0.5 * logvar)
+        z = mean + std * torch.randn_like(mean)
+        z = self.scale_factor * z
+        output = {"posterior": z}
+
+        if return_stats:
+            output["mu"] = mean
+            output["logvar"] = logvar
+
+        return output
 
     def decode(self, z):
         z = (1. / self.scale_factor) * z
@@ -449,71 +472,69 @@ class FrozenAutoencoderKL(nn.Module):
         dec = self.decoder(z)
         return dec
 
-    def forward(self, inputs, fn):
-        if fn == 'encode_moments':
-            return self.encode_moments(inputs)
-        elif fn == 'encode':
-            return self.encode(inputs)
-        elif fn == 'decode':
-            return self.decode(inputs)
+    def forward(self, x, high_filter=0, blk_sz=8, delta=0.0):
+        output = self.encode(x, return_stats=True)
+
+        # KL reg
+        output["kl_loss"] = self.kl_loss(output["mu"], output["logvar"])
+
+        # SM reg
+        output["sm_rgb"] = latent_spectral_reg_dct(
+            x, output["posterior"],
+            blur_ks=7, blur_sigma=1.2, n_bins=16,
+            loss_type="kl", log_power=True, center="mean", remove_dc=True,
+        )
+
+        output["sm_delta"] = latent_spectral_reg_dct(
+            x, output["posterior"],
+            blur_ks=7, blur_sigma=1.2, n_bins=16,
+            loss_type="kl", log_power=True, center="none", remove_dc=True, delta=delta
+        )
+
+        # RMSC reg
+        _, _, hz, wz = output["posterior"].shape
+        downsam_x = gaussian_blur(x, kernel_size=7, sigma=1.2)
+        downsam_x = downsample_to(downsam_x, (hz, wz))
+        x_rmsc = rmsc(downsam_x, patch_sz=1)  # (batch, )
+        z_rmsc = rmsc(output["posterior"], patch_sz=1)  # (batch, )
+        output["rmsc_loss"] = F.mse_loss(x_rmsc, z_rmsc)  # scaler
+
+
+        if high_filter == 0:
+            output["img"] = x
         else:
-            raise NotImplementedError
+            # low pass x and latents
+            z = output["posterior"]
+            _, _, H, W = x.shape
+            _, _, h, w = z.shape
 
+            x = split_into_blocks_torch(x, blk_sz)  # (B, C, NUM_blocks, b, b)
+            z = split_into_blocks_torch(z, blk_sz)  # (B, C, num_blocks, b, b)
 
-def get_model(pretrained_path, scale_factor=0.18215):
-    ddconfig = dict(
-        double_z=True,
-        z_channels=4,
-        resolution=256,
-        in_channels=3,
-        out_ch=3,
-        ch=128,
-        ch_mult=[1, 2, 4, 4],
-        num_res_blocks=2,
-        attn_resolutions=[],
-        dropout=0.0
-    )
-    return FrozenAutoencoderKL(ddconfig, 4, pretrained_path, scale_factor)
+            x = dct_2d_torch_unified(x, center="none")  # (B, C, NUM_blocks, b, b)
+            z = dct_2d_torch_unified(z, center="none")  # (B, C, num_blocks, b, b)
 
+            max_sum = 2 * (blk_sz - 1)  # 14 for 8x8
+            thresh = max_sum - (high_filter - 1)  # 15 - k for 8x8
 
-def main():
-    import torchvision.transforms as transforms
-    from torchvision.utils import save_image
-    import os
-    from PIL import Image
+            u = torch.arange(blk_sz, device=x.device).view(blk_sz, 1)
+            v = torch.arange(blk_sz, device=x.device).view(1, blk_sz)
+            hf_mask = (u + v) >= thresh  # (8,8) True => to be zeroed
 
-    model = get_model('assets/stable-diffusion/autoencoder_kl.pth')
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    model = model.to(device)
+            x[..., hf_mask] = 0.0
+            z[..., hf_mask] = 0.0  # low-pass filter
 
-    scale_factor = 0.18215
-    T = transforms.Compose([transforms.Resize(256), transforms.CenterCrop(256), transforms.ToTensor()])
-    path = 'imgs'
-    fnames = os.listdir(path)
-    for fname in fnames:
-        p = os.path.join(path, fname)
-        img = Image.open(p)
-        img = T(img)
-        img = img * 2. - 1
-        img = img[None, ...]
-        img = img.to(device)
+            x = idct_2d_torch_unified(x, center="none")  # (B, C, NUM_blocks, b, b)
+            z = idct_2d_torch_unified(z, center="none")  # (B, C, num_blocks, b, b)
 
-        # with torch.cuda.amp.autocast():
-        #     moments = model.encode_moments(img)
-        #     mean, logvar = torch.chunk(moments, 2, dim=1)
-        #     logvar = torch.clamp(logvar, -30.0, 20.0)
-        #     std = torch.exp(0.5 * logvar)
-        #     zs = [(mean + std * torch.randn_like(mean)) * scale_factor for _ in range(4)]
-        #     recons = [model.decode(z) for z in zs]
+            # x = torch.clamp(x, -1., 1.)
 
-        with torch.cuda.amp.autocast():
-            print('test encode & decode')
-            recons = [model.decode(model.encode(img)) for _ in range(4)]
+            x = combine_blocks_torch(x, H, W, blk_sz)  # (B, C, H, W)
+            z = combine_blocks_torch(z, h, w, blk_sz)  # (B, C, h, w)
 
-        out = torch.cat([img, *recons], dim=0)
-        out = (out + 1) * 0.5
-        save_image(out, f'recons_{fname}')
+            output["posterior"] = z
+            output["img"] = x
 
+        output["reconstruction"] = self.forward_dec(output["posterior"])
 
-if __name__ == "__main__":
-    main()
+        return output

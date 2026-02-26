@@ -10,6 +10,7 @@ import glob
 from accelerate import Accelerator
 import math
 from modules import LDMConfig, VAE
+from modules import autoencoder
 from dataset import get_dataset
 
 
@@ -19,13 +20,13 @@ def extract_latent(pretrained_weights, config_file, batch_size, dataset, path_to
 
     ### Load VAE Config ###
     with open(config_file, "r") as f:
-        vae_config = yaml.safe_load(f)
-        config = LDMConfig(**vae_config["vae"])
+        vae_config = yaml.safe_load(f)["vae"]
 
     ### Load Model and weights ###
-    model = VAE(config)
-    state_dict = load_file(pretrained_weights)
-    model.load_state_dict(state_dict, strict=True)
+    model = autoencoder.AutoencoderKL(vae_config, vae_config['z_channels'], pretrained_weights, scale_factor=1.0)
+    if pretrained_weights.endswith((".safetensors",)):
+        state_dict = load_file(pretrained_weights)
+        model.load_state_dict(state_dict, strict=True)
     model.eval()
     model = model.to(device)
 
@@ -78,13 +79,13 @@ def extract_latent_ddp(pretrained_weights, config_file, batch_size, dataset, pat
 
     ### Load VAE Config ###
     with open(config_file, "r") as f:
-        vae_config = yaml.safe_load(f)
-        config = LDMConfig(**vae_config["vae"])
+        vae_config = yaml.safe_load(f)["vae"]
 
     ### Load Model and weights ###
-    model = VAE(config)
-    state_dict = load_file(pretrained_weights)
-    model.load_state_dict(state_dict, strict=True)
+    model = autoencoder.AutoencoderKL(vae_config, vae_config['z_channels'], pretrained_weights, scale_factor=1.0)
+    if pretrained_weights.endswith((".safetensors",)):
+        state_dict = load_file(pretrained_weights)
+        model.load_state_dict(state_dict, strict=True)
     model.eval()
     model = model.to(device)
 
@@ -176,12 +177,12 @@ def get_latent_scaler(pretrained_weights, config_file, batch_size, dataset, path
     accelerator.print(f"accelerate: world_size={accelerator.num_processes}, rank={accelerator.process_index}")
 
     with open(config_file, "r") as f:
-        vae_config = yaml.safe_load(f)
-        config = LDMConfig(**vae_config["vae"])
+        vae_config = yaml.safe_load(f)["vae"]
 
-    model = VAE(config)
-    state_dict = load_file(pretrained_weights)
-    model.load_state_dict(state_dict, strict=True)
+    model = autoencoder.AutoencoderKL(vae_config, vae_config['z_channels'], pretrained_weights, scale_factor=1.0)
+    if pretrained_weights.endswith((".safetensors",)):
+        state_dict = load_file(pretrained_weights)
+        model.load_state_dict(state_dict, strict=True)
     model.eval().to(device)
 
     org_dataset, _ = get_dataset(dataset=dataset, path_to_data=path_to_dataset, train=False, random_flip_p=0.0)
@@ -294,12 +295,12 @@ def extract_latent_ddp_for_REPA(
     accelerator.print(f"accelerate: world_size={world}, rank={rank}")
 
     with open(config_file, "r") as f:
-        vae_config = yaml.safe_load(f)
-        config = LDMConfig(**vae_config["vae"])
+        vae_config = yaml.safe_load(f)["vae"]
 
-    model = VAE(config)
-    state_dict = load_file(pretrained_weights)
-    model.load_state_dict(state_dict, strict=True)
+    model = autoencoder.AutoencoderKL(vae_config, vae_config['z_channels'], pretrained_weights, scale_factor=1.0)
+    if pretrained_weights.endswith((".safetensors",)):
+        state_dict = load_file(pretrained_weights)
+        model.load_state_dict(state_dict, strict=True)
     model.eval()
     model = model.to(device)
 

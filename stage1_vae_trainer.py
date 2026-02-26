@@ -15,6 +15,7 @@ import lpips
 
 from utils import load_val_images, save_orig_and_generated_images, count_num_params, convert_to_PIL_imgs
 from modules import VAE, LDMConfig, PatchGAN, init_weights
+from modules import autoencoder
 from modules import LPIPS as mylpips
 from dataset import get_dataset
 from eval_utils.utils import calculate_psnr_between_folders
@@ -51,9 +52,6 @@ def main():
 
     with open(args.model_config, "r") as f:
         vae_config = yaml.safe_load(f)["vae"]
-        config = LDMConfig(**vae_config)
-
-    assert not config.quantize, "This script only supports VAE, use stage1_vqvae_trainer.py for Quantized"
 
     ### Initialize Accelerator/Tracker ###
     path_to_experiment = os.path.join(args.working_directory, args.experiment_name)
@@ -69,9 +67,12 @@ def main():
         accelerator.init_trackers(args.experiment_name, init_kwargs={"wandb": {"name": args.wandb_run_name}})
 
     ### Load Model ###
-    model = VAE(config).to(accelerator.device)
-    latent_res = (config.img_size // (2**(len(config.vae_channels_per_block)-1)))
-    accelerator.print(f"LATENT SPACE DIMENSIONS: {config.latent_channels, latent_res, latent_res}")
+    model = autoencoder.AutoencoderKL(vae_config, vae_config['z_channels'], args.resume_from_checkpoint, scale_factor=1.0)
+    model = model.to(accelerator.device)
+    # model = VAE(config).to(accelerator.device)
+
+    latent_res = (vae_config['resolution'] // (2**(len(vae_config['ch_mult'])-1)))
+    accelerator.print(f"LATENT SPACE DIMENSIONS: {vae_config['z_channels'], latent_res, latent_res}")
 
     ### Load LPIPS and SSIM ###
     use_lpips = False
@@ -236,7 +237,7 @@ def main():
         return {key: 0 for (key, _) in log.items()}
 
     ### Resume From Checkpoint ###
-    if args.resume_from_checkpoint is not None:
+    if args.resume_from_checkpoint is not None and not args.resume_from_checkpoint.endswith((".pth", ".pt")):
         accelerator.print(f"Resuming from Checkpoint: {args.resume_from_checkpoint}")
         path_to_checkpoint = os.path.join(path_to_experiment, args.resume_from_checkpoint)
         accelerator.load_state(path_to_checkpoint)
