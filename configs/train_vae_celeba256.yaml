@@ -22,7 +22,7 @@ training_args:
   learning_rate: 0.00005                        # VAE Training Learning Rate  (batch_sz 48)
   lr_scheduler: constant_with_warmup            # LR Scheduler
   lr_warmup_steps: 2000                         # LR Warmup Steps
-  total_training_iterations: 1000000             # Total Training Iterations  (batch_sz 48)
+  total_training_iterations: 500000             # Total Training Iterations  (batch_sz 48)
   checkpoint_iterations: 10000                  # Checkpoint Iteration Frequency
   per_gpu_batch_size: 12                        # Batch per GPU (multipled by n_gpus in accelerate)
   gradient_accumulations_steps: 1               # Split per GPU batch into accumulation steps
@@ -30,7 +30,7 @@ training_args:
   reconstruction_loss_fn: l1                    # What Reconstruction Loss do you want? ("l1", "l2")
   kl_weight: 0.0                                # KL Regularization Weight, 0.000001
   sm_weight: 0.01                               # ESM Regularization Weight
-  delta: 0.0                                    # power law shift of ESM Regularization
+  delta: 0.2                                    # power law shift of ESM Regularization
   rmsc_weight: 0.0                              # RMSC Regularization Weight
   num_val_random_samples: 4                     # How many random samples do you want to plot reconstructions for? (max of the set batch per gpu)
   val_img_folder_path: null                     # Folder of images you want to plot during training, if you dont want to random sample
