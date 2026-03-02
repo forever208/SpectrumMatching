@@ -452,13 +452,13 @@ def extract_latent_ddp_for_REPA(
 
 
 if __name__ == "__main__":
-    # extract_latent(
-    #     pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SDVAE_bf16_b48_f16_flip_400k/SDVAE/checkpoint_330000/model.safetensors',
-    #     config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', batch_size=100, dataset='celeba256',
-    #     path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
-    #     path_to_latents='/leonardo_work/EUHPC_B29_014/datasets/celeba256_latents/celeba256_SM_test',
-    #     num_stat_samples=50000
-    # )
+    extract_latent(
+        pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_b48_f16_ESM_delta10_noDC_ftVAE_log001/SDVAE/checkpoint_340000/model.safetensors',
+        config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', batch_size=100, dataset='celeba256',
+        path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
+        path_to_latents='/leonardo_work/EUHPC_B29_014/datasets/celeba256_latents/celeba256_ESM_delta10_noDC_340k',
+        num_stat_samples=50000
+    )
 
     # accelerate launch --num_processes 4 --mixed_precision no extract_VAE_latents.py
     # extract_latent_ddp(
@@ -469,21 +469,21 @@ if __name__ == "__main__":
     #     num_stat_samples=50000
     # )
 
-    # accelerate launch --num_processes 4 --mixed_precision no extract_VAE_latents.py
-    get_latent_scaler(
-        pretrained_weights="/leonardo_work/EUHPC_B29_014/LDM_exps/imagenet256_b128_f16_DSM_blk8_81012/SDVAE/checkpoint_720000/model.safetensors",
-        config_file="/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml", batch_size=100, dataset="imagenet_train",
-        path_to_dataset="/leonardo_work/EUHPC_B29_014/datasets/imagenet256/train", num_stat_samples=200000,
-    )
-
-    # accelerate launch --num_processes 4 --mixed_precision no extract_VAE_latents.py
-    extract_latent_ddp_for_REPA(
-        pretrained_weights="/leonardo_work/EUHPC_B29_014/LDM_exps/imagenet256_b128_f16_DSM_blk8_81012/SDVAE/checkpoint_720000/model.safetensors",
-        config_file="/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml", batch_size=100, dataset="imagenet_train",
-        path_to_dataset="/leonardo_work/EUHPC_B29_014/datasets/imagenet256/train",
-        path_to_latents="/leonardo_work/EUHPC_B29_014/datasets/imagenet256_DSM_720k/vae-sd",
-        path_to_images="/leonardo_work/EUHPC_B29_014/datasets/imagenet256_DSM_720k/images",
-        num_workers=12,
-        no_images=False,  # set True to skip PNG writing
-        max_save_threads=8,  # cap per-rank save threads (recommend 4–16)
-    )
+    # # accelerate launch --num_processes 4 --mixed_precision no extract_VAE_latents.py
+    # get_latent_scaler(
+    #     pretrained_weights="/leonardo_work/EUHPC_B29_014/LDM_exps/imagenet256_b128_f16_DSM_blk8_81012/SDVAE/checkpoint_720000/model.safetensors",
+    #     config_file="/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml", batch_size=100, dataset="imagenet_train",
+    #     path_to_dataset="/leonardo_work/EUHPC_B29_014/datasets/imagenet256/train", num_stat_samples=200000,
+    # )
+    #
+    # # accelerate launch --num_processes 4 --mixed_precision no extract_VAE_latents.py
+    # extract_latent_ddp_for_REPA(
+    #     pretrained_weights="/leonardo_work/EUHPC_B29_014/LDM_exps/imagenet256_b128_f16_DSM_blk8_81012/SDVAE/checkpoint_720000/model.safetensors",
+    #     config_file="/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml", batch_size=100, dataset="imagenet_train",
+    #     path_to_dataset="/leonardo_work/EUHPC_B29_014/datasets/imagenet256/train",
+    #     path_to_latents="/leonardo_work/EUHPC_B29_014/datasets/imagenet256_DSM_720k/vae-sd",
+    #     path_to_images="/leonardo_work/EUHPC_B29_014/datasets/imagenet256_DSM_720k/images",
+    #     num_workers=12,
+    #     no_images=False,  # set True to skip PNG writing
+    #     max_save_threads=8,  # cap per-rank save threads (recommend 4–16)
+    # )
