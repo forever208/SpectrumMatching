@@ -46,43 +46,43 @@ def visualize_latent_PCA(path_to_pretrained_weights=None, config_file=None,
 
     for batch in tqdm(loader):
         with torch.no_grad():
-            img = batch["images"].to(device)  # (1, 3, img_h, img_w)
-            latent = model.encode(img, scale_factor=1.0)  # mean and logvar, (batch, 8, 32, 32)
-
-            latent = latent["posterior"].squeeze(0)  # (C, H, W)
+            img = batch["images"].to(device)  # (1,3,H,W)
+            latent = model.encode(img, scale_factor=1.0)
+            latent = latent["posterior"].squeeze(0)  # (C,H,W)
             C, H, W = latent.shape
-            latent = latent.cpu().numpy()  # (C, H, W)
+            latent = latent.cpu().numpy()
 
-            # Apply PCA to reduce C → 3 for RGB visualization
-            latent_flat = np.transpose(latent, (1, 2, 0)).reshape(-1, C)  # (C, H, W) --> (H*W, C)
+            ### PCA ###
+            latent_flat = np.transpose(latent, (1, 2, 0)).reshape(-1, C)
             pca = PCA(n_components=3, random_state=42)
-            latent_pca = pca.fit_transform(latent_flat)  # (H*W, C) --> (H*W, 3)
-
-            # Reshape back to image grid
+            latent_pca = pca.fit_transform(latent_flat)
             latent_img = latent_pca.reshape(H, W, 3)
-
-            # Normalize to [0,1] for visualization
             latent_img = (latent_img - latent_img.min()) / (latent_img.max() - latent_img.min() + 1e-8)
 
-            # Prepare the original image for display (1, 3, h, w) -> (h, w, 3)
-            img_disp = img.squeeze(0).permute(1, 2, 0).cpu().numpy()  # (h, w, 3)
+            ### Original image ###
+            img_disp = img.squeeze(0).permute(1, 2, 0).cpu().numpy()
             img_disp = (img_disp - img_disp.min()) / (img_disp.max() - img_disp.min() + 1e-8)
 
-            # Side-by-side plot
-            plt.figure(figsize=(8, 4))
-            plt.subplot(1, 2, 1)
+            # -----------------------------
+            # Figure 1: Original Image
+            # -----------------------------
+            plt.figure(figsize=(4,4))
             plt.imshow(img_disp)
-            plt.title("Original Image")
             plt.axis("off")
-
-            plt.subplot(1, 2, 2)
-            plt.imshow(latent_img)
-            plt.title("Latent PCA")
-            plt.axis("off")
-
-            plt.tight_layout()
+            plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+            plt.margins(0, 0)
             plt.show()
-            plt.close()
+
+            # -----------------------------
+            # Figure 2: Latent PCA
+            # -----------------------------
+            plt.figure(figsize=(4,4))
+            plt.imshow(latent_img)
+            plt.axis("off")
+            plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+            plt.margins(0, 0)
+            plt.show()
+            plt.close("all")
 
 
 
@@ -743,11 +743,11 @@ def visualize_PSD(DCT_center=False):
 
 
 if __name__ == "__main__":
-    # visualize_latent_PCA(
-    #     path_to_pretrained_weights='/home/mang/Downloads/celeba256_b48_f16_ESM_delta10_noDC_ftVAE_log001/SDVAE/checkpoint_300000/model.safetensors',
-    #     config_file='configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
-    #     path_to_dataset='/home/mang/Downloads/celeba256/celeba256_visual',
-    # )
+    visualize_latent_PCA(
+        path_to_pretrained_weights='/home/mang/Downloads/celeba256_b48_f16_ESM_delta10_noDC_ftVAE_log001/SDVAE/checkpoint_300000/model.safetensors',
+        config_file='configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+        path_to_dataset='/home/mang/Downloads/celeba256/celeba256_visual',
+    )
 
     # spectrum_distribution(
     #     path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_b48_f16_ESM_delta10_noDC_ftVAE_log001/SDVAE/checkpoint_300000/model.safetensors',
@@ -756,7 +756,7 @@ if __name__ == "__main__":
     #     bs=100, max_samples=30000, n_bins=16, delta=0.0
     # )
 
-    visualize_PSD(DCT_center=False)
+    # visualize_PSD(DCT_center=False)
 
     # for ckpt in [280, 360, 400, 460]:
     #     spectrum_loss(
