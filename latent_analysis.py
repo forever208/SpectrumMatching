@@ -18,6 +18,76 @@ from eval_utils.fid_score import calculate_fid_given_paths
 import shutil
 
 
+def visualize_latent_pca_paperstyle(
+    path_to_pretrained_weights_list, config_file,
+    dataset, img_sz, path_to_dataset,
+    titles=("SD-VAE","+Ours","SDXL-VAE","+Ours"),
+    n_fit_imgs=64, pixel_subsample=4096, n_show=3, seed=42,
+):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    with open(config_file, "r") as f:
+        config = LDMConfig(**yaml.safe_load(f)["vae"])
+
+    # load dataset (UNCHANGED from your code)
+    ds, _ = get_dataset(dataset=dataset, path_to_data=path_to_dataset, num_channels=3, img_size=img_sz,
+                        random_resize=False, random_flip_p=0.0, train=False)
+    loader = DataLoader(ds, batch_size=1, shuffle=False, drop_last=False,
+                        num_workers=8, pin_memory=False, persistent_workers=True)
+
+    # load 4 models (same arch, different weights)
+    models = []
+    for w in path_to_pretrained_weights_list:
+        m = VAE(config); m.load_state_dict(load_file(w), strict=True)
+        models.append(m.to(device).eval())
+
+    rng = np.random.default_rng(seed)
+    it_fit = iter(loader)
+
+    # fit PCA SEPARATELY for each model on many latents (paper-style)
+    pcas = []
+    for mi, m in enumerate(models):
+        Xs = []
+        it_fit = iter(loader)
+        for _ in tqdm(range(n_fit_imgs), desc=f"Fit PCA: {titles[mi]}"):
+            try: batch = next(it_fit)
+            except StopIteration: break
+            img = batch["images"].to(device)
+            with torch.no_grad():
+                lat = m.encode(img, scale_factor=1.0)["posterior"].squeeze(0)   # (C,H,W)
+                x = lat.permute(1,2,0).reshape(-1, lat.shape[0]).detach().cpu().numpy()  # (HW,C)
+            if pixel_subsample and x.shape[0] > pixel_subsample:
+                x = x[rng.choice(x.shape[0], pixel_subsample, replace=False)]
+            Xs.append(x)
+        X = np.concatenate(Xs, 0)
+        pca = PCA(n_components=3, random_state=seed).fit(X)
+        pcas.append(pca)
+
+    # visualize: use each model's fixed PCA basis for all images
+    it = iter(loader)
+    for _ in range(n_show):
+        try: batch = next(it)
+        except StopIteration: break
+        img = batch["images"].to(device)
+        img_disp = img.squeeze(0).permute(1,2,0).detach().cpu().numpy()
+        img_disp = (img_disp - img_disp.min()) / (img_disp.max() - img_disp.min() + 1e-8)
+
+        fig, axes = plt.subplots(1, 1 + len(models), figsize=(3.2*(1+len(models)), 3.2))
+        axes[0].imshow(img_disp); axes[0].set_title("Image"); axes[0].axis("off")
+
+        for mi, m in enumerate(models):
+            with torch.no_grad():
+                lat = m.encode(img, scale_factor=1.0)["posterior"].squeeze(0)   # (C,H,W)
+                C,H,W = lat.shape
+                x = lat.permute(1,2,0).reshape(-1, C).detach().cpu().numpy()
+            y = pcas[mi].transform(x).reshape(H, W, 3)
+            y = (y - y.min()) / (y.max() - y.min() + 1e-8)  # per-image minmax (matches many papers)
+            axes[mi+1].imshow(y); axes[mi+1].set_title(titles[mi]); axes[mi+1].axis("off")
+
+        plt.subplots_adjust(left=0, right=1, top=0.90, bottom=0, wspace=0.02)
+        plt.show()
+        plt.close(fig)
+
+
 def visualize_latent_PCA(path_to_pretrained_weights=None, config_file=None,
                          dataset=None, img_sz=None, path_to_dataset=None, ):
 
@@ -743,10 +813,48 @@ def visualize_PSD(DCT_center=False):
 
 
 if __name__ == "__main__":
-    visualize_latent_PCA(
-        path_to_pretrained_weights='/home/mang/Downloads/celeba256_b48_f16_ESM_delta10_noDC_ftVAE_log001/SDVAE/checkpoint_300000/model.safetensors',
-        config_file='configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+    # visualize_latent_PCA(
+    #     path_to_pretrained_weights='/home/mang/Downloads/celeba256_b48_f16_ESM_delta10_noDC_ftVAE_log001/SDVAE/checkpoint_300000/model.safetensors',
+    #     config_file='configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
+    #     path_to_dataset='/home/mang/Downloads/celeba256/celeba256_visual',
+    # )
+
+    # weight_paths = [
+    #     '/home/mang/Downloads/SM/celeba256_SDVAE_bf16_b48_f16_flip_400k/SDVAE/checkpoint_300000/model.safetensors',
+    #     '/home/mang/Downloads/SM/celeba256_SDVAE_b48_f16_downsam/SDVAE/checkpoint_300000/model.safetensors',
+    #     '/home/mang/Downloads/SM/celeba256_b48_f16_ESM_delta10_noDC_ftVAE_log001/SDVAE/checkpoint_300000/model.safetensors',
+    #     '/home/mang/Downloads/SM/celeba256_b48_f16_DSM_blk8/SDVAE/checkpoint_440000/model.safetensors',
+    # ]
+    #
+    # visualize_latent_pca_paperstyle(
+    #     weight_paths,
+    #     config_file='configs/ldm_f16d16.yaml',
+    #     dataset="celeba256",
+    #     img_sz=256,
+    #     path_to_dataset='/home/mang/Downloads/celeba256/celeba256_visual',
+    #     titles=("SD-VAE", "Scale Equivariance", "ESM", "DSM"),
+    #     n_fit_imgs=1024,
+    #     pixel_subsample=8192,
+    #     n_show=24,
+    # )
+
+    weight_paths = [
+        '/home/mang/Downloads/SM/celeba256_SDVAE_b48_f8/SDVAE/checkpoint_450000/model.safetensors',
+        '/home/mang/Downloads/SM/celeba256_SDVAE_b48_f8_downsam/SDVAE/checkpoint_360000/model.safetensors',
+        '/home/mang/Downloads/SM/celeba256_b48_f8_ESM_delta12_noDC_ftVAE_log001/SDVAE/checkpoint_250000/model.safetensors',
+        '/home/mang/Downloads/SM/celeba256_b48_f8_DSM_blk8_81012/SDVAE/checkpoint_330000/model.safetensors',
+    ]
+
+    visualize_latent_pca_paperstyle(
+        weight_paths,
+        config_file='configs/ldm_f8d4.yaml',
+        dataset="celeba256",
+        img_sz=256,
         path_to_dataset='/home/mang/Downloads/celeba256/celeba256_visual',
+        titles=("SD-VAE", "Scale Equivariance", "ESM", "DSM"),
+        n_fit_imgs=1024,
+        pixel_subsample=8192,
+        n_show=24,
     )
 
     # spectrum_distribution(
