@@ -30,7 +30,7 @@ training_args:
   reconstruction_loss_fn: l1                    # What Reconstruction Loss do you want? ("l1", "l2")
   kl_weight: 0.0                                # KL Regularization Weight, 0.000001
   sm_weight: 0.01                               # ESM Regularization Weight
-  delta: 0.2                                    # power law shift of ESM Regularization
+  delta: 1.0                                    # power law shift of ESM Regularization
   rmsc_weight: 0.0                              # RMSC Regularization Weight
   num_val_random_samples: 4                     # How many random samples do you want to plot reconstructions for? (max of the set batch per gpu)
   val_img_folder_path: null                     # Folder of images you want to plot during training, if you dont want to random sample

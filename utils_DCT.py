@@ -175,6 +175,10 @@ def downsample_to(x: torch.Tensor, size_hw: tuple[int, int]):
     return F.interpolate(x, size=size_hw, mode="bicubic", align_corners=False)
 
 
+def upsample_to(x: torch.Tensor, size_hw: tuple[int, int]):
+    return F.interpolate(x, size=size_hw, mode="bicubic", align_corners=False)
+
+
 # ============================================================
 # 3) Channel-aggregated DCT power spectrum
 # ============================================================
