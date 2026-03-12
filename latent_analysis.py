@@ -714,61 +714,53 @@ def rmsc_loss(path_to_pretrained_weights=None, config_file=None, dataset=None,
 
 
 def visualize_PSD(DCT_center=False):
-    if DCT_center:
-        px = [0.2404, 0.3026, 0.1509, 0.1053, 0.0536, 0.04, 0.0246, 0.018, 0.0137, 0.0117, 0.0096, 0.0077, 0.0068, 0.0056, 0.0051, 0.0045]
+    # RGB image
+    px_RGB_celeba256 = [0.4057, 0.2333, 0.119, 0.0835, 0.0424, 0.0317, 0.0194, 0.0142, 0.0108, 0.0091, 0.0076, 0.006, 0.0053, 0.0044, 0.004, 0.0035]
 
-        # SDVAE
-        pz_300k = [0.1156, 0.1394, 0.0883, 0.0754, 0.0623, 0.0571, 0.0545, 0.0505, 0.0488, 0.0483, 0.0465, 0.0445, 0.0433, 0.0422, 0.0417, 0.0413]
+    # PSD_delta of RGB image
+    px_delta_0_6 = [0.2747, 0.1931, 0.121, 0.0989, 0.061, 0.0517, 0.0361, 0.0291, 0.0242, 0.022, 0.0194, 0.0164, 0.0153, 0.0132, 0.0124, 0.0114]
+    px_delta_1_0 = [0.1961, 0.156, 0.1099, 0.0977, 0.0677, 0.0617, 0.0472, 0.0404, 0.0358, 0.034, 0.0313, 0.0278, 0.0266, 0.0238, 0.0229, 0.0212]
+    px_delta_1_1 = [0.1788, 0.1466, 0.1061, 0.0961, 0.0684, 0.0633, 0.0494, 0.043, 0.0386, 0.0371, 0.0345, 0.031, 0.0299, 0.0269, 0.0261, 0.0241]
+    px_delta_1_2 = [0.1627, 0.1374, 0.1021, 0.0941, 0.0687, 0.0646, 0.0515, 0.0455, 0.0414, 0.0401, 0.0377, 0.0342, 0.0333, 0.0302, 0.0294, 0.0272]
+    px_delta_1_3 = [0.1479, 0.1286, 0.098, 0.0918, 0.0688, 0.0655, 0.0532, 0.0477, 0.044, 0.043, 0.0408, 0.0374, 0.0366, 0.0335, 0.0328, 0.0303]
 
-        # dowensam
-        pz_380k = [0.1378, 0.1433, 0.1173, 0.0988, 0.0816, 0.0708, 0.0642, 0.051, 0.0453, 0.0407, 0.0293, 0.0511, 0.0181, 0.0168, 0.0164, 0.0176]
+    # SDVAE
+    pz_SDVAE_300k = [0.1671, 0.1312, 0.0833, 0.071, 0.0587, 0.0538, 0.0513, 0.0476, 0.046, 0.0455, 0.0438, 0.0419, 0.0408, 0.0398, 0.0393, 0.0389]
 
-        # ESM, ftVAE, log001
-        pz_290k = [0.2308, 0.2563, 0.1587, 0.1094, 0.0597, 0.0432, 0.0321, 0.0236, 0.0188, 0.0168, 0.0135, 0.0113, 0.0082, 0.0067, 0.0059, 0.0052]
+    # dowensam
+    pz_downsam_380k = [0.1666, 0.1385, 0.1134, 0.0955, 0.0789, 0.0685, 0.062, 0.0493, 0.0438, 0.0393, 0.0283, 0.0494, 0.0175, 0.0163, 0.0159, 0.017]
 
-        # DSM, blk8
-        pz_440k = [0.1402, 0.1513, 0.1236, 0.1066, 0.0796, 0.0696, 0.0544, 0.0427, 0.0388, 0.0346, 0.0298, 0.0315, 0.0265, 0.0249, 0.0237, 0.0222]
+    # DSM, blk8
+    pz_DSM_440k = [0.1638, 0.1471, 0.1202, 0.1037, 0.0774, 0.0677, 0.0529, 0.0415, 0.0377, 0.0337, 0.029, 0.0306, 0.0258, 0.0242, 0.023, 0.0216]
 
-        # RMSC, ftVAE, 1.0
-        pz_270k = [0.1394, 0.153, 0.1167, 0.1016, 0.0793, 0.0689, 0.0579, 0.0491, 0.0425, 0.0396, 0.0348, 0.0307, 0.0252, 0.022, 0.0204, 0.0189]
+    # RMSC, ftVAE, 1.0
+    pz_RMSC_270k = [0.1813, 0.1454, 0.111, 0.0967, 0.0755, 0.0656, 0.0551, 0.0467, 0.0405, 0.0376, 0.0331, 0.0292, 0.024, 0.0209, 0.0194, 0.018]
 
-    else:
-        # RGB image
-        px_RGB = [0.4057, 0.2333, 0.119, 0.0835, 0.0424, 0.0317, 0.0194, 0.0142, 0.0108, 0.0091, 0.0076, 0.006, 0.0053, 0.0044, 0.004, 0.0035]
+    # ESM, ftVAE, log001, delta 0.0
+    pz_delta00_290k = [0.2705, 0.2427, 0.1507, 0.1038, 0.0567, 0.041, 0.0304, 0.0223, 0.0179, 0.0159, 0.0128, 0.0107, 0.0078, 0.0063, 0.0056, 0.0049]
 
-        # PSD_delta of RGB image
-        px_delta_0_6 = [0.2747, 0.1931, 0.121, 0.0989, 0.061, 0.0517, 0.0361, 0.0291, 0.0242, 0.022, 0.0194, 0.0164, 0.0153, 0.0132, 0.0124, 0.0114]
-        px_delta_1_0 = [0.1961, 0.156, 0.1099, 0.0977, 0.0677, 0.0617, 0.0472, 0.0404, 0.0358, 0.034, 0.0313, 0.0278, 0.0266, 0.0238, 0.0229, 0.0212]
-        px_delta_1_1 = [0.1788, 0.1466, 0.1061, 0.0961, 0.0684, 0.0633, 0.0494, 0.043, 0.0386, 0.0371, 0.0345, 0.031, 0.0299, 0.0269, 0.0261, 0.0241]
-        px_delta_1_2 = [0.1627, 0.1374, 0.1021, 0.0941, 0.0687, 0.0646, 0.0515, 0.0455, 0.0414, 0.0401, 0.0377, 0.0342, 0.0333, 0.0302, 0.0294, 0.0272]
-        px_delta_1_3 = [0.1479, 0.1286, 0.098, 0.0918, 0.0688, 0.0655, 0.0532, 0.0477, 0.044, 0.043, 0.0408, 0.0374, 0.0366, 0.0335, 0.0328, 0.0303]
+    # ESM, ftVAE, log001, delta 0.4
+    pz_delta04_260k = [0.3176, 0.2109, 0.1225, 0.0958, 0.0556, 0.0448, 0.0304, 0.0235, 0.0189, 0.0169, 0.0145, 0.0121, 0.0108, 0.0093, 0.0086, 0.0078]
 
-        # SDVAE
-        pz_SDVAE_300k = [0.1671, 0.1312, 0.0833, 0.071, 0.0587, 0.0538, 0.0513, 0.0476, 0.046, 0.0455, 0.0438, 0.0419, 0.0408, 0.0398, 0.0393, 0.0389]
+    # ESM, ftVAE, log001, delta 0.63
+    pz_delta06_280k = [0.2698, 0.1903, 0.1196, 0.0991, 0.0616, 0.0522, 0.0371, 0.0298, 0.025, 0.0229, 0.0203, 0.0173, 0.016, 0.0139, 0.0131, 0.012]
 
-        # dowensam
-        pz_downsam_380k = [0.1666, 0.1385, 0.1134, 0.0955, 0.0789, 0.0685, 0.062, 0.0493, 0.0438, 0.0393, 0.0283, 0.0494, 0.0175, 0.0163, 0.0159, 0.017]
+    # ESM, ftVAE, log001, delta 1.0
+    pz_delta10_300k = [0.1658, 0.1483, 0.113, 0.0985, 0.0754, 0.0652, 0.0531, 0.0446, 0.0387, 0.0363, 0.0329, 0.0295, 0.026, 0.0249, 0.0246, 0.0233]
 
-        # DSM, blk8
-        pz_DSM_440k = [0.1638, 0.1471, 0.1202, 0.1037, 0.0774, 0.0677, 0.0529, 0.0415, 0.0377, 0.0337, 0.029, 0.0306, 0.0258, 0.0242, 0.023, 0.0216]
+    # REPA
+    px_RGB_imgnet256 = [0.4657, 0.1913, 0.0997, 0.0666, 0.0388, 0.0265, 0.0217, 0.0162, 0.0131, 0.0123, 0.0103, 0.0097, 0.0076, 0.0069, 0.0067, 0.0069]
+    px_delta_0_8_imgnet = [0.2622, 0.1427, 0.0977, 0.0808, 0.0582, 0.047, 0.0438, 0.0369, 0.0334, 0.0338, 0.0307, 0.0309, 0.026, 0.0249, 0.0251, 0.0258]
+    px_delta_1_0_imgnet = [0.2178, 0.1268, 0.0921, 0.0797, 0.0602, 0.0505, 0.0484, 0.042, 0.0389, 0.0401, 0.0372, 0.0379, 0.0325, 0.0314, 0.032, 0.0326]
+    pz_dinov2 = [0.2288, 0.1442, 0.1042, 0.0824, 0.0629, 0.0515, 0.0458, 0.0395, 0.0353, 0.0339, 0.0335, 0.03, 0.0281, 0.0273, 0.0268, 0.0258]
 
-        # RMSC, ftVAE, 1.0
-        pz_RMSC_270k = [0.1813, 0.1454, 0.111, 0.0967, 0.0755, 0.0656, 0.0551, 0.0467, 0.0405, 0.0376, 0.0331, 0.0292, 0.024, 0.0209, 0.0194, 0.018]
-
-        # ESM, ftVAE, log001, delta 0.0
-        pz_delta00_290k = [0.2705, 0.2427, 0.1507, 0.1038, 0.0567, 0.041, 0.0304, 0.0223, 0.0179, 0.0159, 0.0128, 0.0107, 0.0078, 0.0063, 0.0056, 0.0049]
-
-        # ESM, ftVAE, log001, delta 0.4
-        pz_delta04_260k = [0.3176, 0.2109, 0.1225, 0.0958, 0.0556, 0.0448, 0.0304, 0.0235, 0.0189, 0.0169, 0.0145, 0.0121, 0.0108, 0.0093, 0.0086, 0.0078]
-
-        # ESM, ftVAE, log001, delta 0.63
-        pz_delta06_280k = [0.2698, 0.1903, 0.1196, 0.0991, 0.0616, 0.0522, 0.0371, 0.0298, 0.025, 0.0229, 0.0203, 0.0173, 0.016, 0.0139, 0.0131, 0.012]
-
-        # ESM, ftVAE, log001, delta 1.0
-        pz_delta10_300k = [0.1658, 0.1483, 0.113, 0.0985, 0.0754, 0.0652, 0.0531, 0.0446, 0.0387, 0.0363, 0.0329, 0.0295, 0.026, 0.0249, 0.0246, 0.0233]
+    # VA-VAE
+    px_imgnet256 = [0.4636, 0.1917, 0.1005, 0.0668, 0.0391, 0.0266, 0.0218, 0.0163, 0.0133, 0.0124, 0.0103, 0.0096, 0.0076, 0.0069, 0.0067, 0.0068]
+    px_delta_1_0_imgnet256 = [0.2158, 0.1274, 0.0928, 0.0801, 0.0607, 0.0507, 0.0486, 0.0421, 0.0391, 0.0399, 0.0371, 0.0375, 0.0322, 0.0314, 0.032, 0.0326]
+    pz_vavae = [0.1893, 0.1489, 0.1356, 0.1029, 0.0707, 0.0551, 0.0508, 0.0414, 0.0336, 0.0325, 0.0331, 0.0257, 0.0219, 0.0205, 0.0198, 0.0181]
 
     # x-axis
-    x = np.arange(1, len(px_RGB) + 1)
+    x = np.arange(1, len(px_RGB_celeba256) + 1)
 
     # ----- Global style -----
     plt.style.use("seaborn-v0_8-whitegrid")
@@ -784,20 +776,20 @@ def visualize_PSD(DCT_center=False):
     plt.figure(figsize=(9, 5))
 
     # ----- Colors (carefully selected) -----
-    color_real = "#333333"  # dark gray
-    color_sdvae = "#4C72B0"  # muted blue
-    color_target = "#55A868"  # green
-    color_esm = "#C44E52"  # strong red
+    dark_gray = "#333333"  # dark gray
+    muted_blue = "#4C72B0"  # muted blue
+    green = "#55A868"  # green
+    strong_red = "#C44E52"  # strong red
 
     # ----- Plot lines -----
-    plt.plot(x, px_RGB, linewidth=2.5, color=color_real, label="RGB Image")
-    plt.plot(x, pz_SDVAE_300k, linewidth=2.5, color=color_sdvae, label="SD-VAE")
-    plt.plot(x, pz_delta10_300k, linewidth=2.5, color=color_esm, label="ESM-AE")
+    plt.plot(x, px_imgnet256, linewidth=2.5, color=dark_gray, label=r"RGB Image ($\delta=0.0$)")
+    plt.plot(x, px_delta_1_0_imgnet256, linewidth=2.5, color=green, linestyle="--", label=r"Power-law Target ($\delta=1.0$)")
+    plt.plot(x, pz_vavae, linewidth=2.5, color=strong_red, label="VA-VAE")
 
-    # plt.plot(x, px_RGB, linewidth=2.5, color=color_real, label="RGB Image")
-    # plt.plot(x, pz_SDVAE_300k, linewidth=2.5, color=color_sdvae, label="SD-VAE")
-    # plt.plot(x, pz_downsam_380k, linewidth=2.5, color=color_target, label="Scale Equivariance")
-    # plt.plot(x, pz_DSM_440k, linewidth=2.5, color=color_esm, label="DSM-AE")
+    # plt.plot(x, px_RGB, linewidth=2.5, color=dark_gray, label="RGB Image")
+    # plt.plot(x, pz_SDVAE_300k, linewidth=2.5, color=muted_blue, label="SD-VAE")
+    # plt.plot(x, pz_downsam_380k, linewidth=2.5, color=green, label="Scale Equivariance")
+    # plt.plot(x, pz_DSM_440k, linewidth=2.5, color=strong_red, label="DSM-AE")
 
     # ----- Labels -----
     plt.xlabel("Frequency Index")
@@ -838,24 +830,24 @@ if __name__ == "__main__":
     #     n_show=24,
     # )
 
-    weight_paths = [
-        '/home/mang/Downloads/SM/celeba256_SDVAE_b48_f8/SDVAE/checkpoint_450000/model.safetensors',
-        '/home/mang/Downloads/SM/celeba256_SDVAE_b48_f8_downsam/SDVAE/checkpoint_360000/model.safetensors',
-        '/home/mang/Downloads/SM/celeba256_b48_f8_ESM_delta12_noDC_ftVAE_log001/SDVAE/checkpoint_250000/model.safetensors',
-        '/home/mang/Downloads/SM/celeba256_b48_f8_DSM_blk8_81012/SDVAE/checkpoint_330000/model.safetensors',
-    ]
-
-    visualize_latent_pca_paperstyle(
-        weight_paths,
-        config_file='configs/ldm_f8d4.yaml',
-        dataset="celeba256",
-        img_sz=256,
-        path_to_dataset='/home/mang/Downloads/celeba256/celeba256_visual',
-        titles=("SD-VAE", "Scale Equivariance", "ESM", "DSM"),
-        n_fit_imgs=1024,
-        pixel_subsample=8192,
-        n_show=24,
-    )
+    # weight_paths = [
+    #     '/home/mang/Downloads/SM/celeba256_SDVAE_b48_f8/SDVAE/checkpoint_450000/model.safetensors',
+    #     '/home/mang/Downloads/SM/celeba256_SDVAE_b48_f8_downsam/SDVAE/checkpoint_360000/model.safetensors',
+    #     '/home/mang/Downloads/SM/celeba256_b48_f8_ESM_delta12_noDC_ftVAE_log001/SDVAE/checkpoint_250000/model.safetensors',
+    #     '/home/mang/Downloads/SM/celeba256_b48_f8_DSM_blk8_81012/SDVAE/checkpoint_330000/model.safetensors',
+    # ]
+    #
+    # visualize_latent_pca_paperstyle(
+    #     weight_paths,
+    #     config_file='configs/ldm_f8d4.yaml',
+    #     dataset="celeba256",
+    #     img_sz=256,
+    #     path_to_dataset='/home/mang/Downloads/celeba256/celeba256_visual',
+    #     titles=("SD-VAE", "Scale Equivariance", "ESM", "DSM"),
+    #     n_fit_imgs=1024,
+    #     pixel_subsample=8192,
+    #     n_show=24,
+    # )
 
     # spectrum_distribution(
     #     path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_b48_f16_ESM_delta10_noDC_ftVAE_log001/SDVAE/checkpoint_300000/model.safetensors',
@@ -864,7 +856,7 @@ if __name__ == "__main__":
     #     bs=100, max_samples=30000, n_bins=16, delta=0.0
     # )
 
-    # visualize_PSD(DCT_center=False)
+    visualize_PSD(DCT_center=False)
 
     # for ckpt in [280, 360, 400, 460]:
     #     spectrum_loss(
