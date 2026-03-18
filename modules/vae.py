@@ -517,26 +517,24 @@ class VAE(EncoderDecoder):
 
         return x
     
-    def forward(self, x, high_filter=0, blk_sz=8, delta=0.0):
+    def forward(self, x, DSM_mask=0, blk_sz=8, delta=0.0):
         output = self.encode(x, return_stats=True)
 
         # KL reg
         output["kl_loss"] = self.kl_loss(output["mu"], output["logvar"])
 
-        # SM reg
+        # ESM reg
         output["sm_rgb"] = latent_spectral_reg_dct(
             x, output["posterior"],
-            blur_ks=7, blur_sigma=1.2, n_bins=16,
-            loss_type="kl", log_power=True, center="mean", remove_dc=True,
+            n_bins=16, loss_type="kl", log_power=True, center="mean", remove_dc=True,
         )
 
         output["sm_delta"] = latent_spectral_reg_dct(
             x, output["posterior"],
-            blur_ks=7, blur_sigma=1.2, n_bins=16,
-            loss_type="kl", log_power=True, center="none", remove_dc=True, delta=delta
+            n_bins=16, loss_type="kl", log_power=True, center="none", remove_dc=True, delta=delta
         )
 
-        # RMSC reg
+        # RMSC reg (not used in practice)
         _, _, hz, wz = output["posterior"].shape
         downsam_x = gaussian_blur(x, kernel_size=7, sigma=1.2)
         downsam_x = downsample_to(downsam_x, (hz, wz))
@@ -544,7 +542,8 @@ class VAE(EncoderDecoder):
         z_rmsc = rmsc(output["posterior"], patch_sz=1)  # (batch, )
         output["rmsc_loss"] = F.mse_loss(x_rmsc, z_rmsc)  # scaler
 
-        if high_filter == 0:
+        # DSM regularization
+        if DSM_mask == 0:
             output["img"] = x
         else:
             # low pass x and latents
@@ -559,7 +558,7 @@ class VAE(EncoderDecoder):
             z = dct_2d_torch_unified(z, center="none")  # (B, C, num_blocks, b, b)
 
             max_sum = 2 * (blk_sz - 1)  # 14 for 8x8
-            thresh = max_sum - (high_filter - 1)  # 15 - k for 8x8
+            thresh = max_sum - (DSM_mask - 1)  # 15 - k for 8x8
 
             u = torch.arange(blk_sz, device=x.device).view(blk_sz, 1)
             v = torch.arange(blk_sz, device=x.device).view(1, blk_sz)

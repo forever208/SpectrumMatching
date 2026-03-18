@@ -264,7 +264,7 @@ def main():
             discriminator.train()
 
         for i, batch in enumerate(dataloader):
-            high_filter = random.choice([0, 8, 10, 12,])
+            DSM_mask = random.choice([0, 8, 10, 12,])  # DSM parameters
             pixel_values = batch["images"].to(accelerator.device)
             model_toggle = (global_step % 2) == 0
             train_disc = (global_step >= train_cfg["disc_start"])
@@ -279,7 +279,7 @@ def main():
                 else:
                     generator_step = False
 
-            model_outputs = model(pixel_values, high_filter, train_cfg["blk_sz"], delta=train_cfg["delta"])
+            model_outputs = model(pixel_values, DSM_mask, train_cfg["blk_sz"], delta=train_cfg["delta"])
             reconstructions = model_outputs["reconstruction"]
             pixel_values = model_outputs["img"]
 
@@ -332,9 +332,9 @@ def main():
                     kl_loss = model_outputs["kl_loss"].mean()
                     loss = loss + kl_loss * train_cfg["kl_weight"]
 
-                    ### SM Loss ###
+                    ### ESM Loss ###
                     sm_loss = model_outputs["sm_delta"].mean()
-                    loss = loss + sm_loss * train_cfg["sm_weight"]
+                    loss = loss + sm_loss * train_cfg["esm_weight"]
 
                     ### RMSC Loss ###
                     rmsc_loss = model_outputs["rmsc_loss"]

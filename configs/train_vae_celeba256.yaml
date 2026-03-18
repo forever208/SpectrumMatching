@@ -29,7 +29,7 @@ training_args:
   max_grad_norm: 1.0                            # Max Grad Norm for Clipping
   reconstruction_loss_fn: l1                    # What Reconstruction Loss do you want? ("l1", "l2")
   kl_weight: 0.0                                # KL Regularization Weight
-  sm_weight: 0.0                                # ESM Regularization Weight
+  esm_weight: 0.0                               # ESM Regularization Weight
   delta: 0.0                                    # power law shift of ESM Regularization
   rmsc_weight: 0.0                              # RMSC Regularization Weight
   blk_sz: 8                                     # block size of DCT for Decoding Spectrum Marching (DSM)

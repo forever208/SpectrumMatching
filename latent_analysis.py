@@ -213,8 +213,7 @@ def spectrum_distribution(path_to_pretrained_weights=None, config_file=None, dat
 
             sx, sz, kl_loss = latent_spectral_reg_dct(
                 img, latent,
-                blur_ks=7, blur_sigma=1.2, n_bins=n_bins,
-                loss_type="kl", center="none", remove_dc=False, return_dist=True, delta=delta
+                n_bins=n_bins, loss_type="kl", center="none", remove_dc=False, return_dist=True, delta=delta
             )
 
             sx = sx.detach().cpu()  # sx, sz expected (B,n_bins)
@@ -310,8 +309,7 @@ def spectrum_loss(path_to_pretrained_weights=None, config_file=None, dataset=Non
 
             kl_loss = latent_spectral_reg_dct(
             img, latent,
-            blur_ks=7, blur_sigma=1.2, n_bins=16,
-            loss_type="kl", log_power=True, center="mean", remove_dc=True,
+            n_bins=16, loss_type="kl", log_power=True, center="mean", remove_dc=True,
             )
 
             SpecLoss.append(kl_loss)
@@ -857,35 +855,3 @@ if __name__ == "__main__":
     # )
 
     visualize_PSD(DCT_center=False)
-
-    # for ckpt in [280, 360, 400, 460]:
-    #     spectrum_loss(
-    #         path_to_pretrained_weights=f'/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SM_b48_f16_16bins_log001_DSM_blk8/SDVAE/checkpoint_{ckpt}000/model.safetensors',
-    #         config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
-    #         path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
-    #         bs=100, max_samples=10000
-    #     )
-
-    # for i in [0, 2, 4, 6, 8]:
-    #     for ckpt in [230, 290, 310]:
-    #         lowpass_rFID(
-    #             path_to_pretrained_weights=f'/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SM_b48_f16_16bins_log001_ftVAE/SDVAE/checkpoint_{ckpt}000/model.safetensors',
-    #             config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
-    #             path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
-    #             path_to_save_imgs='/leonardo_work/EUHPC_B29_014',
-    #             batch_size=100, max_samples=10000, blk_sz=8, k=i
-    #         )
-
-    # for ckpt in [280, 360, 400, 460]:
-    #     rmsc_loss(
-    #         path_to_pretrained_weights=f'/leonardo_work/EUHPC_B29_014/LDM_exps/celeba256_SM_b48_f16_16bins_log001_DSM_blk8/SDVAE/checkpoint_{ckpt}000/model.safetensors',
-    #         config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml', dataset='celeba256', img_sz=256,
-    #         path_to_dataset='/leonardo_work/EUHPC_B29_014/datasets/celeba256/celeba256',
-    #         bs=100, max_samples=30000
-    #     )
-
-    # lowpass_rFID(path_to_pretrained_weights='/leonardo_work/EUHPC_B29_014/LDM_exps/imagenet256_SDVAE_bf16_b128_f16_600k/SDVAE/checkpoint_410000/model.safetensors',
-    #              config_file='/leonardo_work/EUHPC_B29_014/LDM/configs/ldm_f16d16.yaml',
-    #              batch_size=100, dataset="imagenet_train", img_sz=256,
-    #              path_to_dataset="/leonardo_work/EUHPC_B29_014/datasets/imagenet256/train",
-    #              path_to_save_imgs='/leonardo_work/EUHPC_B29_014', num_workers=12, max_samples=50000, k=2, blk_sz=8)
