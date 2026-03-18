@@ -248,7 +248,10 @@ def latent_spectral_reg_dct(
     B, Cz, hz, wz = z.shape
 
     # 1) anti-alias then downsample x to match z spatial size
-    x_blur = gaussian_blur(x, kernel_size=blur_ks, sigma=blur_sigma)
+    if hz == 8:
+        x_blur = x
+    else:
+        x_blur = gaussian_blur(x, kernel_size=blur_ks, sigma=blur_sigma)
     x_ds = downsample_to(x_blur, (hz, wz))
 
     # 2) channel-aggregated DCT power spectra (both in [-1,1] domain)

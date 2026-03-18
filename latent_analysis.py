@@ -213,8 +213,7 @@ def spectrum_distribution(path_to_pretrained_weights=None, config_file=None, dat
 
             sx, sz, kl_loss = latent_spectral_reg_dct(
                 img, latent,
-                blur_ks=7, blur_sigma=1.2, n_bins=n_bins,
-                loss_type="kl", center="none", remove_dc=False, return_dist=True, delta=delta
+                n_bins=n_bins, loss_type="kl", center="none", remove_dc=False, return_dist=True, delta=delta
             )
 
             sx = sx.detach().cpu()  # sx, sz expected (B,n_bins)
@@ -310,8 +309,7 @@ def spectrum_loss(path_to_pretrained_weights=None, config_file=None, dataset=Non
 
             kl_loss = latent_spectral_reg_dct(
             img, latent,
-            blur_ks=7, blur_sigma=1.2, n_bins=16,
-            loss_type="kl", log_power=True, center="mean", remove_dc=True,
+            n_bins=16, loss_type="kl", log_power=True, center="mean", remove_dc=True,
             )
 
             SpecLoss.append(kl_loss)

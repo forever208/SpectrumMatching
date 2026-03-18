@@ -326,9 +326,9 @@ def main():
                     kl_loss = model_outputs["kl_loss"].mean()
                     loss = loss + kl_loss * train_cfg["kl_weight"]
 
-                    ### SM Loss ###
+                    ### ESM Loss ###
                     sm_loss = model_outputs["sm_delta"].mean()
-                    loss = loss + sm_loss * train_cfg["sm_weight"]
+                    loss = loss + sm_loss * train_cfg["esm_weight"]
 
                     ### RMSC Loss ###
                     rmsc_loss = model_outputs["rmsc_loss"]

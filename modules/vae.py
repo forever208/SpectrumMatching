@@ -522,20 +522,21 @@ class VAE(EncoderDecoder):
         reconstruction = self.forward_dec(output["posterior"])
         output["reconstruction"] = reconstruction
 
+        # KL regularization
         output["kl_loss"] = self.kl_loss(output["mu"], output["logvar"])
 
+        # ESM regularization
         output["sm_rgb"] = latent_spectral_reg_dct(
             x, output["posterior"],
-            blur_ks=7, blur_sigma=1.2, n_bins=16,
-            loss_type="kl", log_power=True, center="mean", remove_dc=True, delta=0.0
+            n_bins=16, loss_type="kl", log_power=True, center="mean", remove_dc=True, delta=0.0
         )
 
         output["sm_delta"] = latent_spectral_reg_dct(
             x, output["posterior"],
-            blur_ks=7, blur_sigma=1.2, n_bins=16,
-            loss_type="kl", log_power=True, center="mean", remove_dc=True, delta=delta
+            n_bins=16, loss_type="kl", log_power=True, center="mean", remove_dc=True, delta=delta
         )
 
+        # RMSC regularization (not used in practice)
         _, _, hz, wz = output["posterior"].shape
         downsam_x = gaussian_blur(x, kernel_size=7, sigma=1.2)
         downsam_x = downsample_to(downsam_x, (hz, wz))
