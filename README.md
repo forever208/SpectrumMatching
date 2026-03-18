@@ -62,7 +62,7 @@ center_crop_imagenet_train_mp(root_dir='/imagenet256/train', image_size=256)
 
 
 ## Train SD-VAE, ESM-AE on CelebA
-checkout to the branch [SDVAE_and_ESM](https://github.com/forever208/SpectrumMatching)
+checkout to the branch [SDVAE_and_ESM](https://github.com/forever208/SpectrumMatching/tree/SDVAE_and_ESM)
 
 we use 4 A100 GPUs to train VAE on CelebA 256x256 (feel free to use f8d4 or f16d16)
 
@@ -86,7 +86,7 @@ in [train_vae_celeba256.yaml](configs/train_vae_celeba256.yaml)
 
 ## Train DSM-AE on CelebA
 
-checkout to the branch [DSM](https://github.com/forever208/SpectrumMatching)
+checkout to the branch [DSM](https://github.com/forever208/SpectrumMatching/tree/DSM)
 
 we use 4 A100 GPUs to train DSM-AE on CelebA 256x256 (feel free to use f8d4 or f16d16)
 
@@ -105,7 +105,7 @@ accelerate launch --multi_gpu --num_machines 1 --num_processes 4 --num_cpu_threa
 
 
 ## Train SD-VAE on ImageNet
-checkout to the branch [SDVAE_and_ESM](https://github.com/forever208/SpectrumMatching)
+checkout to the branch [SDVAE_and_ESM](https://github.com/forever208/SpectrumMatching/tree/SDVAE_and_ESM)
 
 we use 8 A100 GPUs to train VAE on ImageNet 256x256 (we use f16d16 for efficiency reason)
 
@@ -123,7 +123,7 @@ accelerate launch --multi_gpu --num_machines 1 --num_processes 8 --num_cpu_threa
 
 
 ## Train DSM-AE on ImageNet
-checkout to the branch [DSM](https://github.com/forever208/SpectrumMatching)
+checkout to the branch [DSM](https://github.com/forever208/SpectrumMatching/tree/DSM)
 
 we use 8 A100 GPUs to train VAE on ImageNet 256x256 (we use f16d16 for efficiency reason)
 
