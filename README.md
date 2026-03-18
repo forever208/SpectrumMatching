@@ -68,12 +68,12 @@ we use 4 A100 GPUs to train VAE on CelebA 256x256 (feel free to use f8d4 or f16d
 
 ```shell
 accelerate launch --multi_gpu --num_machines 1 --num_processes 4 --num_cpu_threads_per_process 8 \
---mixed_precision bf16 LDM/vae_trainer.py \
---working_directory LDM/YOUR_EXP_NAME \
---eval_dir LDM/YOUR_EXP_NAME \
+--mixed_precision bf16 vae_trainer.py \
+--working_directory YOUR_EXP_NAME \
+--eval_dir YOUR_EXP_NAME \
 --log_wandb --experiment_name SDVAE --wandb_run_name YOUR_EXP_NAME \
---training_config LDM/configs/train_vae_celeba256.yaml \
---model_config LDM/configs/ldm_f16d16.yaml \
+--training_config ./configs/train_vae_celeba256.yaml \
+--model_config ./configs/ldm_f16d16.yaml \
 --dataset celeba256 --path_to_dataset PATH_TO_DATASET \
 --no-log_wandb
 ```
@@ -92,12 +92,12 @@ we use 4 A100 GPUs to train DSM-AE on CelebA 256x256 (feel free to use f8d4 or f
 
 ```shell
 accelerate launch --multi_gpu --num_machines 1 --num_processes 4 --num_cpu_threads_per_process 8 \
---mixed_precision bf16 LDM/vae_trainer.py \
---working_directory LDM/YOUR_EXP_NAME \
---eval_dir LDM/YOUR_EXP_NAME \
+--mixed_precision bf16 vae_trainer.py \
+--working_directory YOUR_EXP_NAME \
+--eval_dir YOUR_EXP_NAME \
 --log_wandb --experiment_name DSM --wandb_run_name YOUR_EXP_NAME \
---training_config LDM/configs/train_vae_celeba256.yaml \
---model_config LDM/configs/ldm_f16d16.yaml \
+--training_config ./configs/train_vae_celeba256.yaml \
+--model_config ./configs/ldm_f16d16.yaml \
 --dataset celeba256 --path_to_dataset PATH_TO_DATASET \
 --no-log_wandb
 ```
@@ -111,12 +111,12 @@ we use 8 A100 GPUs to train VAE on ImageNet 256x256 (we use f16d16 for efficienc
 
 ```shell
 accelerate launch --multi_gpu --num_machines 1 --num_processes 8 --num_cpu_threads_per_process 8 \
---mixed_precision bf16 LDM/vae_trainer.py \
---working_directory LDM/YOUR_EXP_NAME \
---eval_dir LDM/YOUR_EXP_NAME \
+--mixed_precision bf16 vae_trainer.py \
+--working_directory YOUR_EXP_NAME \
+--eval_dir YOUR_EXP_NAME \
 --log_wandb --experiment_name SDVAE --wandb_run_name YOUR_EXP_NAME \
---training_config LDM/configs/train_vae_imagenet256.yaml \
---model_config LDM/configs/ldm_f16d16.yaml \
+--training_config ./configs/train_vae_imagenet256.yaml \
+--model_config ./configs/ldm_f16d16.yaml \
 --dataset celeba256 --path_to_dataset PATH_TO_DATASET \
 --no-log_wandb
 ```
@@ -129,12 +129,12 @@ we use 8 A100 GPUs to train VAE on ImageNet 256x256 (we use f16d16 for efficienc
 
 ```shell
 accelerate launch --multi_gpu --num_machines 1 --num_processes 8 --num_cpu_threads_per_process 8 \
---mixed_precision bf16 LDM/vae_trainer.py \
---working_directory LDM/YOUR_EXP_NAME \
---eval_dir LDM/YOUR_EXP_NAME \
+--mixed_precision bf16 vae_trainer.py \
+--working_directory YOUR_EXP_NAME \
+--eval_dir YOUR_EXP_NAME \
 --log_wandb --experiment_name DSM --wandb_run_name YOUR_EXP_NAME \
---training_config LDM/configs/train_vae_imagenet256.yaml \
---model_config LDM/configs/ldm_f16d16.yaml \
+--training_config ./configs/train_vae_imagenet256.yaml \
+--model_config ./configs/ldm_f16d16.yaml \
 --dataset celeba256 --path_to_dataset PATH_TO_DATASET \
 --no-log_wandb
 ```
