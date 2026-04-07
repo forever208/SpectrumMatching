@@ -156,7 +156,7 @@ extract_latent(
 we then use [U-ViT] to train the diffusion
 
 
-Using the script [extract_VAE_latents.py](extract_VAE_latents.py) to extract VAE latents of ImageNet 256
+Using the script [extract_VAE_latents.py](extract_VAE_latents.py) to extract VAE latents of ImageNet 256.
 
 ```python
     # accelerate launch --num_processes 4 --mixed_precision no extract_VAE_latents.py
