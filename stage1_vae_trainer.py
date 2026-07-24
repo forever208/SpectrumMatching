@@ -233,7 +233,8 @@ def main():
             discriminator.train()
 
         for i, batch in enumerate(dataloader):
-            downsam = random.choice([1, 2, 4])
+            # similar to the implementation in the paper Scale Equivariance, where original training still dominant the loss
+            downsam = random.choices([1, 2, 4], weights=[0.7, 0.15, 0.15], k=1)[0]
             pixel_values = batch["images"].to(accelerator.device)
             model_toggle = (global_step % 2) == 0
             train_disc = (global_step >= train_cfg["disc_start"])

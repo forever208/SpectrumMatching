@@ -28,7 +28,7 @@ training_args:
   gradient_accumulations_steps: 1               # Split per GPU batch into accumulation steps
   max_grad_norm: 1.0                            # Max Grad Norm for Clipping
   reconstruction_loss_fn: l1                    # What Reconstruction Loss do you want? ("l1", "l2")
-  kl_weight: 0.0                                # KL Regularization Weight
+  kl_weight: 0.0                                # KL Regularization Weight (follow the paper: Scale Equivariance)
   sm_weight: 0.0                                # SM Regularization Weight
   rmsc_weight: 0.0                              # RMSC Regularization Weight
   num_val_random_samples: 4                     # How many random samples do you want to plot reconstructions for? (max of the set batch per gpu)
