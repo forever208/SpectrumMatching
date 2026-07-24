@@ -412,7 +412,7 @@ class Decoder(nn.Module):
 
 
 class AutoencoderKL(nn.Module):
-    def __init__(self, ddconfig, embed_dim, pretrained_path, scale_factor=1.0):
+    def __init__(self, ddconfig, embed_dim, pretrained_path=None, scale_factor=1.0):
         super().__init__()
         print(f'Create autoencoder with scale_factor={scale_factor}')
         self.encoder = Encoder(**ddconfig)
@@ -422,7 +422,7 @@ class AutoencoderKL(nn.Module):
         self.post_quant_conv = torch.nn.Conv2d(embed_dim, ddconfig["z_channels"], 1)
         self.embed_dim = embed_dim
         self.scale_factor = scale_factor
-        if pretrained_path.endswith((".pth", ".pt")):
+        if pretrained_path is not None and pretrained_path.endswith((".pth", ".pt")):
             m, u = self.load_state_dict(torch.load(pretrained_path, map_location='cpu'))
             print(f"Loaded official SDVAE ckpt from {pretrained_path}")
             assert len(m) == 0 and len(u) == 0

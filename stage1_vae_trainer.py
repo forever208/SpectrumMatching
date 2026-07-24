@@ -2,6 +2,7 @@ import os
 import yaml
 import argparse
 import random
+import re
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -12,6 +13,7 @@ from datetime import timedelta
 from tqdm import tqdm
 from diffusers.optimization import get_scheduler
 import lpips
+from safetensors.torch import load_file
 
 from utils import load_val_images, save_orig_and_generated_images, count_num_params, convert_to_PIL_imgs
 from modules import VAE, LDMConfig, PatchGAN, init_weights
@@ -25,6 +27,100 @@ import shutil
 from utils_DCT import latent_spectral_reg_dct, split_into_blocks_torch, combine_blocks_torch, dct_2d_torch_unified, idct_2d_torch_unified
 
 
+def convert_diffusers_vae_state_dict(state_dict, model_state_dict, num_levels):
+    """Convert Diffusers AutoencoderKL parameter names to this LDM-style VAE."""
+    converted = {}
+    attention_names = {
+        "group_norm": "norm",
+        "query": "q",
+        "key": "k",
+        "value": "v",
+        "proj_attn": "proj_out",
+    }
+
+    for source_key, value in state_dict.items():
+        key = source_key
+        key = key.replace("encoder.conv_norm_out.", "encoder.norm_out.")
+        key = key.replace("decoder.conv_norm_out.", "decoder.norm_out.")
+
+        match = re.match(r"encoder\.down_blocks\.(\d+)\.resnets\.(\d+)\.(.+)", key)
+        if match:
+            level, block, suffix = match.groups()
+            key = f"encoder.down.{level}.block.{block}.{suffix}"
+
+        match = re.match(r"encoder\.down_blocks\.(\d+)\.downsamplers\.0\.(.+)", key)
+        if match:
+            level, suffix = match.groups()
+            key = f"encoder.down.{level}.downsample.{suffix}"
+
+        match = re.match(r"decoder\.up_blocks\.(\d+)\.resnets\.(\d+)\.(.+)", key)
+        if match:
+            level, block, suffix = match.groups()
+            key = f"decoder.up.{num_levels - 1 - int(level)}.block.{block}.{suffix}"
+
+        match = re.match(r"decoder\.up_blocks\.(\d+)\.upsamplers\.0\.(.+)", key)
+        if match:
+            level, suffix = match.groups()
+            key = f"decoder.up.{num_levels - 1 - int(level)}.upsample.{suffix}"
+
+        match = re.match(r"(encoder|decoder)\.mid_block\.resnets\.(\d+)\.(.+)", key)
+        if match:
+            section, block, suffix = match.groups()
+            key = f"{section}.mid.block_{int(block) + 1}.{suffix}"
+
+        match = re.match(
+            r"(encoder|decoder)\.mid_block\.attentions\.0\.([^.]+)\.(weight|bias)",
+            key,
+        )
+        if match:
+            section, layer, parameter = match.groups()
+            key = f"{section}.mid.attn_1.{attention_names[layer]}.{parameter}"
+
+        key = key.replace(".conv_shortcut.", ".nin_shortcut.")
+        if key not in model_state_dict:
+            raise ValueError(f"Unsupported checkpoint key: {source_key} -> {key}")
+
+        target_shape = model_state_dict[key].shape
+        if value.shape != target_shape:
+            if value.numel() != model_state_dict[key].numel():
+                raise ValueError(
+                    f"Shape mismatch for {source_key} -> {key}: "
+                    f"{tuple(value.shape)} != {tuple(target_shape)}"
+                )
+            # Diffusers stores attention projections as Linear weights, while
+            # the custom VAE implements them as 1x1 convolutions.
+            value = value.reshape(target_shape)
+
+        converted[key] = value
+
+    missing = sorted(set(model_state_dict) - set(converted))
+    if missing:
+        raise ValueError(f"Pretrained checkpoint is missing {len(missing)} keys: {missing[:10]}")
+    return converted
+
+
+def load_pretrained_vae(model, checkpoint_path, vae_config):
+    """Load VAE model weights only; optimizer and training state are untouched."""
+    if not os.path.isfile(checkpoint_path):
+        raise FileNotFoundError(f"Pretrained checkpoint not found: {checkpoint_path}")
+
+    if checkpoint_path.endswith(".safetensors"):
+        state_dict = load_file(checkpoint_path, device="cpu")
+    else:
+        state_dict = torch.load(checkpoint_path, map_location="cpu")
+        if isinstance(state_dict, dict) and "state_dict" in state_dict:
+            state_dict = state_dict["state_dict"]
+
+    model_state_dict = model.state_dict()
+    if set(state_dict) != set(model_state_dict):
+        state_dict = convert_diffusers_vae_state_dict(
+            state_dict,
+            model_state_dict,
+            num_levels=len(vae_config["ch_mult"]),
+        )
+    model.load_state_dict(state_dict, strict=True)
+
+
 ### Load Arguments ###
 def experiment_config_parser():
     parser = argparse.ArgumentParser(description="Experiment Configuration")
@@ -34,6 +130,7 @@ def experiment_config_parser():
     parser.add_argument("--log_wandb", action=argparse.BooleanOptionalAction, help="log to WandB?")
     parser.add_argument("--wandb_run_name", required=True, type=str, metavar="wandb_run_name")
     parser.add_argument("--resume_from_checkpoint",  help="name of ckpt folder to resume training from", default=None, type=str, metavar="resume_from_checkpoint")
+    parser.add_argument("--pretrained_checkpoint", help="model weights used to initialize the VAE", default=None, type=str, metavar="pretrained_checkpoint")
     parser.add_argument("--training_config", help="Path to config file", required=True, type=str, metavar="training_config")
     parser.add_argument("--model_config", help="Path to model config file", required=True, type=str, metavar="model_config")
     parser.add_argument("--dataset", help="dataset to train on", choices=("conceptual_captions", "imagenet", "coco", "celeba256", "ffhq128", "ffhq256"), required=True, type=str)
@@ -67,7 +164,10 @@ def main():
         accelerator.init_trackers(args.experiment_name, init_kwargs={"wandb": {"name": args.wandb_run_name}})
 
     ### Load Model ###
-    model = autoencoder.AutoencoderKL(vae_config, vae_config['z_channels'], args.resume_from_checkpoint, scale_factor=1.0)
+    model = autoencoder.AutoencoderKL(vae_config, vae_config['z_channels'], scale_factor=1.0)
+    if args.pretrained_checkpoint is not None:
+        load_pretrained_vae(model, args.pretrained_checkpoint, vae_config)
+        accelerator.print(f"Loaded pretrained VAE weights from: {args.pretrained_checkpoint}")
     model = model.to(accelerator.device)
     # model = VAE(config).to(accelerator.device)
 
@@ -237,11 +337,16 @@ def main():
         return {key: 0 for (key, _) in log.items()}
 
     ### Resume From Checkpoint ###
-    if args.resume_from_checkpoint is not None and not args.resume_from_checkpoint.endswith((".pth", ".pt")):
+    if args.resume_from_checkpoint is not None:
         accelerator.print(f"Resuming from Checkpoint: {args.resume_from_checkpoint}")
-        path_to_checkpoint = os.path.join(path_to_experiment, args.resume_from_checkpoint)
+        path_to_checkpoint = (
+            args.resume_from_checkpoint
+            if os.path.isabs(args.resume_from_checkpoint)
+            else os.path.join(path_to_experiment, args.resume_from_checkpoint)
+        )
         accelerator.load_state(path_to_checkpoint)
-        global_step = int(args.resume_from_checkpoint.split("_")[-1])
+        checkpoint_name = os.path.basename(os.path.normpath(args.resume_from_checkpoint))
+        global_step = int(checkpoint_name.rsplit("_", 1)[-1])
     else:
         global_step = 0
 
@@ -265,7 +370,8 @@ def main():
             discriminator.train()
 
         for i, batch in enumerate(dataloader):
-            high_filter = random.choice([0, 8, 10, 12,])
+            # high_filter = random.choice([0, 8, 10, 12,])
+            high_filter = 0
             pixel_values = batch["images"].to(accelerator.device)
             model_toggle = (global_step % 2) == 0
             train_disc = (global_step >= train_cfg["disc_start"])

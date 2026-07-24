@@ -64,7 +64,6 @@ def save_orig_and_generated_images(original_images, generated_image_tensors, pat
 
     ### Original Images have been scaled to [-1 to 1], rescale back to [0 to 255] ###
     original_images = original_images.float()
-    original_images = torch.clamp(original_images, -1., 1.)
     original_images = (original_images + 1) / 2
     original_images = original_images.cpu().permute(0,2,3,1).numpy()
     original_images = np.round(255 * original_images).astype(np.uint8)
@@ -88,7 +87,7 @@ def save_orig_and_generated_images(original_images, generated_image_tensors, pat
         x_offset += img_width
     
     ### Save Output ###
-    path_to_save = os.path.join(path_to_save_folder, f"iteration_{step}.jpg")
+    path_to_save = os.path.join(path_to_save_folder, f"iteration_{step}.png")
     final_image.save(path_to_save)
 
 
@@ -323,5 +322,5 @@ def center_crop_imagenet_val_mp(root_dir=None, image_size=256):
 
 if __name__ == "__main__":
     # load_testing_imagenet_encodings()
-    # center_crop_imagenet_val_mp(root_dir='/leonardo_work/EUHPC_B29_014/datasets/imagenet256/val', image_size=256)
-    center_crop_imagenet_train_mp(root_dir='/leonardo_work/EUHPC_B29_014/datasets/imagenet256/train', image_size=256)
+    # center_crop_imagenet_val_mp(root_dir='/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/val', image_size=256)
+    center_crop_imagenet_train_mp(root_dir='/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/train', image_size=256)
