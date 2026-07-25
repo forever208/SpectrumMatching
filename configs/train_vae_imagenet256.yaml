@@ -9,7 +9,7 @@ training_args:
   disc_learning_rate: 0.00005                   # Discriminator Learning Rate
   disc_lr_scheduler: constant_with_warmup       # Discriminator LR Scheduler "constant", "constant_with_warmup", "linear", "cosine"
   disc_lr_warmup_steps: 2000                    # Discriminator LR Warmup Steps
-  disc_start: 100001                             # Discriminator Delayed Starting Iteration (batch_sz 48)
+  disc_start: 0                             # Discriminator Delayed Starting Iteration (batch_sz 48)
   disc_weight: 0.5                              # Discriminator Loss Weight
 
   ### LPIPS Config ###
@@ -19,11 +19,11 @@ training_args:
   lpips_weight: 1.0                             # LPIPS loss weight
 
   ### Training Config ###
-  learning_rate: 0.000001                        # VAE Training Learning Rate  (batch_sz 128)
+  learning_rate: 0.00005                        # VAE Training Learning Rate  (batch_sz 128)
   lr_scheduler: constant_with_warmup            # LR Scheduler
   lr_warmup_steps: 2000                         # LR Warmup Steps
-  total_training_iterations: 100000             # Total Training Iterations  (batch_sz 128)
-  checkpoint_iterations: 2000                  # Checkpoint Iteration Frequency
+  total_training_iterations: 200000             # Total Training Iterations  (batch_sz 128)
+  checkpoint_iterations: 10000                  # Checkpoint Iteration Frequency
   per_gpu_batch_size: 64                        # Batch per GPU (multipled by n_gpus in accelerate)
   gradient_accumulations_steps: 1               # Split per GPU batch into accumulation steps
   max_grad_norm: 1.0                            # Max Grad Norm for Clipping
@@ -32,14 +32,15 @@ training_args:
   sm_weight: 0.0                                # ESM Regularization Weight
   delta: 0.0                                    # power law shift of ESM Regularization
   rmsc_weight: 0.0                              # RMSC Regularization Weight
+  use_dsm: True                                 # Do you want to use Decoding Spectrum Marching (DSM)?
   blk_sz: 8                                     # block size of DCT for Decoding Spectrum Marching (DSM)
   num_val_random_samples: 4                     # How many random samples do you want to plot reconstructions for? (max of the set batch per gpu)
   val_img_folder_path: null                     # Folder of images you want to plot during training, if you dont want to random sample
-  val_generation_freq: 2000                    # How often do you want to test generations?
+  val_generation_freq: 10000                    # How often do you want to test generations?
   num_eval_images: 50000                        # number of images to compute rFID, PSNR and so on
   pixelwise_average: True                       # Do you want to average all the pixels (True) or sum pixels and average the batch (False)
-  optimizer_beta1: 0.9                          # VAdamW Optimizer Beta1
-  optimizer_beta2: 0.999                        # AdamW Optimizer Beta2
+  optimizer_beta1: 0.5                          # VAdamW Optimizer Beta1
+  optimizer_beta2: 0.9                        # AdamW Optimizer Beta2
   optimizer_weight_decay: 0.005                 # AdamW Optimizer Weight Decay
 
   ### Dataset Config ###

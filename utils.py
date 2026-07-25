@@ -322,5 +322,5 @@ def center_crop_imagenet_val_mp(root_dir=None, image_size=256):
 
 if __name__ == "__main__":
     # load_testing_imagenet_encodings()
-    # center_crop_imagenet_val_mp(root_dir='/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/val', image_size=256)
+    center_crop_imagenet_val_mp(root_dir='/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/val', image_size=256)
     center_crop_imagenet_train_mp(root_dir='/mnt/vepfs/base2/stream/ningmang/datasets/imagenet256/train', image_size=256)

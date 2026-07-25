@@ -370,8 +370,7 @@ def main():
             discriminator.train()
 
         for i, batch in enumerate(dataloader):
-            # high_filter = random.choice([0, 8, 10, 12,])
-            high_filter = 0
+            high_filter = random.choice([0, 8, 10, 12]) if train_cfg["use_dsm"] else 0
             pixel_values = batch["images"].to(accelerator.device)
             model_toggle = (global_step % 2) == 0
             train_disc = (global_step >= train_cfg["disc_start"])
